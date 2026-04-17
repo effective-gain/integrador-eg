@@ -656,81 +656,69 @@ Se você está lendo isso depois que o projeto já cresceu: o histórico de comm
 
 ---
 
-## Modelo de mercado: dois produtos, uma infraestrutura
+## Modelo de mercado: dois braços, uma infraestrutura
 
-O Integrador EG sustenta dois produtos distintos que compartilham a mesma base técnica:
+O Integrador EG sustenta dois braços comerciais distintos que compartilham a mesma base técnica. A ordem de execução é clara: **primeiro validar dentro da EG, depois productizar.**
 
----
-
-### Produto 1 — Premium (alto ticket, personalizado)
-
-Cliente com operação estabelecida que precisa de automações customizadas. Cofre exclusivo no Obsidian, prompt desenvolvido pela EG, receitas desenhadas caso a caso, cloud phone dedicado por rede social. Modelo: setup inicial + mensalidade.
+O número de WhatsApp que opera todas as automações é da EG — não do cliente. A EG controla o canal, o cliente usa o serviço.
 
 ---
 
-### Produto 2 — Subcontratados nos EUA (low ticket, alto volume)
+### Braço 1 — EG Subcontratados (low ticket, volume, sem cofre)
 
-**O mercado:**
-Subcontratados imigrantes nos EUA — brasileiros, hispânicos, europeus — que trabalham em construção civil, serviços gerais, elétrica, hidráulica, paisagismo e afins. É um mercado com altíssimo índice de contratação, baixa adoção de tecnologia e uma dor administrativa real e recorrente: eles operam em inglês nos sistemas americanos, mas pensam e se comunicam em português ou espanhol.
+**Para quem:** Subcontratado imigrante nos EUA (brasileiro, hispânico) que precisa de automação administrativa simples e recorrente. Sem complexidade, sem customização profunda.
 
-**A dor específica:**
-- Recebem e emitem invoices em inglês, mas não dominam o idioma
-- Usam QuickBooks ou sistemas similares sem entender bem o fluxo
-- Precisam de alguém para fazer a ponte entre o que aconteceu no campo e o que precisa ser registrado no sistema
-- Não têm contador no dia a dia — resolvem no WhatsApp com quem aparecer
-- Volume alto de tarefas repetitivas de baixo valor intelectual mas alto custo se errado (lançamentos, notas, pagamentos)
+**O que entrega:**
+- Envio automático de invoice para a empresa contratante
+- Automação de e-mail: resume o que chegou, aponta gargalos e o que precisa de ação
+- Comunicação entre subcontratado e contratante de forma organizada
+- Tudo via WhatsApp, no idioma do cliente
 
-**O produto:**
-Um assistente via WhatsApp, em português ou espanhol, que executa as tarefas administrativas recorrentes do subcontratado nos sistemas americanos. O cliente fala no idioma dele, o agente opera o sistema em inglês, e tudo fica registrado e organizado.
+**O que NÃO tem:** Cofre personalizado no Obsidian. O produto roda com receitas pré-construídas e um prompt padrão do segmento. A inteligência é do segmento, não do cliente individual.
 
-**Receitas pré-construídas para o segmento:**
+**Ticket:** ~$200/mês — voltado para volume. Escala por word of mouth dentro das comunidades.
 
-| Tarefa | Frequência | O que o agente faz |
-|--------|-----------|-------------------|
-| Lançar invoice recebida | Diária | Faz login no QuickBooks, lança valor, fornecedor, data |
-| Emitir invoice para cliente | Sob demanda | Preenche e envia invoice pelo sistema |
-| Registrar pagamento recebido | Semanal | Marca invoice como paga no sistema |
-| Checar invoices em aberto | Sob demanda | Lê e responde no WhatsApp quais estão pendentes |
-| Arquivar documentos | Contínuo | Salva contratos, W-9, certificados no lugar certo |
-| Briefing semanal | Toda segunda | Resumo financeiro: recebido, a receber, pendências |
+**Fase atual:** Ainda não lançado. Será validado primeiro dentro da operação da EG antes de abrir para o mercado.
 
-**Diferencial competitivo:**
-O subcontratado não precisa aprender inglês, não precisa aprender QuickBooks, não precisa de contador para tarefas operacionais do dia a dia. Ele manda áudio ou foto no WhatsApp e está feito. O agente faz a tradução — de idioma e de sistema.
+---
 
-**Modelo de negócio:**
-- Preço acessível (low ticket) — voltado para volume, não para margem unitária
-- **Onboarding 100% self-service** — cliente se cadastra sozinho, sem intervenção da EG. Isso é o que garante escala real: centenas de clientes sem crescer a equipe operacional
-- Cofre pré-configurado para o segmento — a EG constrói uma vez, cada cliente novo recebe a mesma base com seus dados específicos preenchidos automaticamente no cadastro
-- Escala por word of mouth dentro das comunidades — subcontratados indicam para outros da mesma comunidade
-- Sem setup complexo — o produto já sabe o que esse cliente precisa antes de ele entrar
+### Braço 2 — EG Premium (alto ticket, DNA exclusivo, cofre dedicado)
 
-**Fluxo de onboarding self-service:**
+**Para quem:** Cliente com operação estabelecida — especialmente empresas que gerenciam múltiplos subcontratados e precisam de automação em toda a cadeia. Esse cliente não é um subcontratado, é quem os contrata.
+
+**O que entrega:**
+- Cofre dedicado no Obsidian com o DNA completo do cliente
+- Prompt desenvolvido e testado pela EG, exclusivo para aquele cliente
+- Receitas de automação desenhadas caso a caso
+- Cloud phone Android por rede social ativa
+- Briefing matinal, diário de execuções, resumo diário
+- Atenção e detalhamento — a EG acompanha e evolui o serviço continuamente
+
+**O que diferencia:** O cliente premium com múltiplos subcontratados precisa de uma camada que o Braço 1 não tem — visibilidade e controle sobre toda a operação, não só sobre as próprias tarefas.
+
+**Ticket:** ~$2.000/mês — não é assinatura de prateleira, é serviço gerenciado. Setup inicial cobrado separadamente.
+
+---
+
+### Ordem de construção
+
 ```
-Cliente acessa landing page
-        ↓
-Preenche cadastro: nome, idioma, sistema financeiro (QuickBooks etc.)
-        ↓
-Conecta número WhatsApp (via QR code — Evolution API)
-        ↓
-Sistema provisiona automaticamente:
-  → Cofre do cliente no Obsidian (baseado no template do segmento)
-  → Grupo WhatsApp dedicado criado
-  → Receitas pré-construídas ativadas
-  → Briefing configurado no horário padrão
-        ↓
-Cliente recebe mensagem de boas-vindas no WhatsApp
-e já pode usar na hora
+Fase 1 — Validação interna (agora)
+  Executar as automações dentro da própria EG
+  Usar o Cowork como ambiente de teste
+  Documentar o que funciona, o que quebra, o que precisa ser ajustado
+
+Fase 2 — Primeiro cliente premium (piloto)
+  Aplicar o modelo completo em um cliente real
+  Construir o cofre, as receitas, o briefing
+  Medir resultado, coletar aprendizado
+
+Fase 3 — Braço 1 (produto do segmento)
+  Com o modelo validado, construir a versão simplificada
+  Receitas pré-construídas para subcontratados
+  Prompt padrão do segmento em PT/ES/EN
+  Lançar para o mercado com onboarding simples
 ```
-
-**O que a EG constrói uma vez e replica infinitamente:**
-- Template de cofre para subcontratados (DNA do segmento)
-- Receitas padrão do segmento (invoice, QuickBooks, documentos)
-- Prompt base do agente em PT, ES e EN
-- Flow de onboarding automatizado
-- Sistema de billing (assinatura mensal)
-
-**Por que este mercado agora:**
-O setor de construção nos EUA tem déficit estrutural de mão de obra e depende cada vez mais de subcontratados imigrantes. Esse mercado cresce, tem dinheiro circulando, e não tem nenhuma solução tecnológica desenhada especificamente para ele na camada administrativa. A barreira de idioma é o problema não resolvido — e o Integrador EG resolve isso nativamente.
 
 ---
 
