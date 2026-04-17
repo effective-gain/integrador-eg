@@ -337,20 +337,50 @@ As APIs oficiais são restritivas: exigem aprovação de app (semanas a meses), 
 
 A abordagem via browser é mais robusta: o agente navega com uma sessão ativa e age como um humano faria — lê o que aparece na tela, entende o contexto e responde.
 
+### O cofre do cliente no Obsidian
+
+Cada cliente tem seu próprio **cofre no Obsidian** — um vault dedicado que funciona como o DNA completo daquele cliente. Não é só um prompt. É o detalhamento de:
+
+- Como o cliente pensa e se comunica
+- Tom de voz, vocabulário, valores da marca
+- Processos de trabalho repetitivos que serão executados de forma autônoma
+- Histórico de decisões e contexto acumulado
+- Limites do que o agente pode e não pode fazer para aquele cliente
+
+Esse cofre alimenta o Claude com contexto rico antes de cada ação. O agente não age no escuro — age com o DNA do cliente carregado. O Obsidian é o repositório vivo desse conhecimento, e ele cresce com o tempo à medida que a EG aprende mais sobre cada cliente.
+
+### Gestão de sessão (transparente para o cliente)
+
+Quando uma sessão cai em qualquer rede social, o sistema EG restaura automaticamente — sem notificar o cliente. A restauração segue a dinâmica definida para cada cliente (horários, frequência, comportamento esperado). O cliente só sabe que o serviço está rodando. A EG cuida da infraestrutura de forma invisível.
+
+### Desenvolvimento e validação do prompt
+
+O fluxo de construção do prompt de cada cliente é:
+1. **EG desenvolve** — com base no cofre do cliente no Obsidian, no DNA da marca e nos objetivos definidos
+2. **Cliente testa** — período de validação onde o cliente aprova as respostas antes de ir ao ar
+3. **Deploy** — prompt homologado entra em produção
+
+### Guardrails globais (parâmetros fixos para todos os clientes)
+
+Os guardrails são baseados no próprio DNA da EG — os mesmos princípios, ética e forma de trabalhar que a EG usa em tudo que faz. Nenhum cliente pode configurar um comportamento que vá contra esses parâmetros. O que a EG não faria para si mesma, não faz para nenhum cliente.
+
+Isso significa que os guardrails não precisam ser uma lista arbitrária de regras — eles emergem naturalmente do cofre da EG no Obsidian, que já documenta como a EG pensa e age.
+
 ### Arquitetura por cliente
 
 Cada cliente tem:
-- Um perfil Chrome com sessão ativa nas redes sociais configuradas
-- Um prompt específico que define o comportamento do bot (tom, escopo, limites)
-- Um conjunto de redes sociais monitoradas, definido conforme a dinâmica do cliente
+- **Cofre dedicado no Obsidian** — DNA completo: tom, processos, contexto, limites
+- **Perfil Chrome** com sessão ativa nas redes sociais configuradas
+- **Prompt homologado** — desenvolvido pela EG, testado e aprovado pelo cliente
+- **Dinâmica de operação** — frequência, horários e comportamento específicos para aquele cliente
 
 ### Desafios a resolver (em design)
 
-1. **Gestão de sessão** — cada rede social por cliente precisa de um perfil Chrome com sessão persistente. O Instagram Keeper já prova que esse padrão funciona.
-2. **Humanização** — redes sociais detectam bots por cadência de ação e ausência de comportamento humano. Estratégias: delays variáveis, intervalos realistas entre respostas.
-3. **Leitura de notificações** — cada plataforma tem seu layout e muda frequentemente. O módulo precisa ser resiliente a mudanças de UI.
-4. **Contexto da resposta** — antes de gerar a resposta, o agente lê o histórico da conversa ou o post original para que o Claude tenha contexto completo.
-5. **Prompt por cliente** — o sistema precisa de uma forma de gerenciar e versionar os prompts de cada cliente. Uma mudança de tom ou escopo deve ser aplicada sem reiniciar o sistema.
+1. **Gestão de sessão** — cada rede social por cliente precisa de um perfil Chrome com sessão persistente. O Instagram Keeper já prova esse padrão.
+2. **Humanização** — redes sociais detectam bots por cadência e comportamento. Estratégias: delays variáveis, intervalos realistas entre respostas.
+3. **Leitura de notificações** — cada plataforma tem seu layout e muda. O módulo precisa ser resiliente a mudanças de UI.
+4. **Contexto da resposta** — o agente lê o histórico da conversa ou o post original antes de gerar a resposta, com o cofre do cliente carregado como contexto.
+5. **Versionamento de prompt** — mudanças de tom ou escopo de um cliente precisam ser aplicadas sem interromper o sistema. O cofre do Obsidian é a fonte de verdade.
 
 ### Redes sociais previstas
 
