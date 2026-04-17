@@ -2,6 +2,7 @@ import pytest
 import respx
 import httpx
 from datetime import datetime
+from unittest.mock import patch
 
 from src.obsidian import ObsidianClient, ObsidianError
 from src.models import AcaoTipo, DiarioEntrada, ObsidianEscrita
@@ -50,12 +51,13 @@ async def test_obsidian_offline_lanca_erro():
         side_effect=httpx.ConnectError("connection refused")
     )
     client = make_client()
-    with pytest.raises(ObsidianError, match="Não foi possível conectar"):
-        await client.criar_ou_append(ObsidianEscrita(
-            caminho="06 - Diario/2026-04-17.md",
-            conteudo="x",
-            modo="append",
-        ))
+    with patch("src.obsidian.asyncio.sleep"):
+        with pytest.raises(ObsidianError, match="Falha após"):
+            await client.criar_ou_append(ObsidianEscrita(
+                caminho="06 - Diario/2026-04-17.md",
+                conteudo="x",
+                modo="append",
+            ))
 
 
 @pytest.mark.asyncio
