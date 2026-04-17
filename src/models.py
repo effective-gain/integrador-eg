@@ -117,3 +117,11 @@ class EmailClassificado(BaseModel):
     urgente: bool = False
     codigo_2fa: Optional[str] = None
     acao_sugerida: Optional[str] = None
+
+
+class BriefingData(BaseModel):
+    data_referencia: str = Field(..., description="Data do briefing, ex: 2026-04-17")
+    diario: dict = Field(default_factory=dict, description="Métricas do diário do dia anterior")
+    emails: list[EmailClassificado] = Field(default_factory=list)
+    tasks_pendentes: list[str] = Field(default_factory=list, description="Linhas de tasks pendentes por projeto")
+    gerado_em: datetime = Field(default_factory=datetime.now)

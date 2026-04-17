@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     gmail_app_password: str = ""
     gmail_imap_host: str = "imap.gmail.com"
 
+    briefing_numero_destino: str = ""
+    briefing_hora: str = "08:00"
+
     log_level: str = "INFO"
     environment: str = "development"
 
