@@ -1,0 +1,42 @@
+{
+  "name": "WA_RESPONDER",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Gera resposta curta baseada na ação executada\nconst acao = $input.first().json;\n\nconst emojis = {\n  criar_nota: '📝',\n  criar_reuniao: '📅',\n  criar_task: '✅',\n  registrar_decisao: '🎯',\n  atualizar_status: '🔄',\n  consultar_tasks: '📋',\n  registrar_lancamento: '💰',\n  criar_daily: '📆'\n};\n\nconst emoji = emojis[acao.acao] || '✅';\nconst resposta = `${emoji} ${acao.conteudo.slice(0, 80)}\\n📁 ${acao.obsidian_caminho}`;\n\nreturn [{ json: { ...acao, resposta_whatsapp: resposta } }];"
+      },
+      "name": "Montar Resposta",
+      "type": "n8n-nodes-base.code",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $json.remetente }}" },
+            { "name": "text", "value": "={{ $json.resposta_whatsapp }}" }
+          ]
+        }
+      },
+      "name": "Enviar Resposta WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Montar Resposta": {
+      "main": [[ { "node": "Enviar Resposta WhatsApp", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "Monta mensagem de confirmação. Envia de volta para o grupo WhatsApp via Evolution API."
+}

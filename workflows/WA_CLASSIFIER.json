@@ -1,0 +1,55 @@
+{
+  "name": "WA_CLASSIFIER",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-5"
+            },
+            {
+              "name": "max_tokens",
+              "value": "256"
+            },
+            {
+              "name": "messages",
+              "value": "=[{ \"role\": \"user\", \"content\": \"Grupo: {{ $json.projeto }}\\nMensagem: {{ $json.mensagem_texto }}\\n\\nRetorne apenas JSON com: acao, projeto, conteudo, prioridade, destinatario.\" }]"
+            }
+          ]
+        }
+      },
+      "name": "Claude Classifier",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai JSON da resposta do Claude\nconst resposta = $input.first().json.content[0].text;\nconst inicio = resposta.indexOf('{');\nconst fim = resposta.lastIndexOf('}') + 1;\nconst acao = JSON.parse(resposta.substring(inicio, fim));\n\n// Adiciona contexto original\nconst contexto = $('WA_RECEPTOR').first().json;\n\nreturn [{ json: { ...acao, remetente: contexto.remetente, timestamp: contexto.timestamp } }];"
+      },
+      "name": "Extrair JSON da Ação",
+      "type": "n8n-nodes-base.code",
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Claude Classifier": {
+      "main": [[ { "node": "Extrair JSON da Ação", "type": "main", "index": 0 } ]]
+    },
+    "Extrair JSON da Ação": {
+      "main": [[ { "node": "WA_EXECUTOR", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "Envia mensagem + contexto para Claude Sonnet. Recebe JSON estruturado com acao, projeto, conteudo, prioridade. Passa para o Executor."
+}

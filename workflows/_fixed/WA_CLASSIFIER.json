@@ -1,0 +1,60 @@
+{
+  "name": "WA_CLASSIFIER",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5\",\n  \"max_tokens\": 256,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Grupo: {{ $json.projeto }}\\nMensagem: {{ $json.mensagem_texto }}\\n\\nRetorne apenas JSON com: acao, projeto, conteudo, prioridade, destinatario.\" }\n  ]\n}",
+        "options": {}
+      },
+      "name": "Claude Classifier",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai JSON da resposta do Claude e funde com contexto recebido do caller.\nconst resposta = $input.first().json.content[0].text;\nconst inicio = resposta.indexOf('{');\nconst fim = resposta.lastIndexOf('}') + 1;\nconst acao = JSON.parse(resposta.substring(inicio, fim));\n\nconst contexto = $('Execute Workflow Trigger').first().json;\n\nreturn [{\n  json: {\n    ...acao,\n    grupo: contexto.grupo,\n    remote_jid: contexto.remote_jid,\n    remetente: contexto.remetente,\n    timestamp: contexto.timestamp\n  }\n}];"
+      },
+      "name": "Extrair JSON da Acao",
+      "type": "n8n-nodes-base.code",
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "WA_EXECUTOR_ID_TODO"
+      },
+      "name": "-> WA_EXECUTOR",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[ { "node": "Claude Classifier", "type": "main", "index": 0 } ]]
+    },
+    "Claude Classifier": {
+      "main": [[ { "node": "Extrair JSON da Acao", "type": "main", "index": 0 } ]]
+    },
+    "Extrair JSON da Acao": {
+      "main": [[ { "node": "-> WA_EXECUTOR", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "PATCH v2 (2026-04-17) - Corrige B1 (entrada via Execute Workflow Trigger) e bug latente do body JSON (antes enviava messages como string via bodyParameters; agora usa specifyBody: json + jsonBody completo, que e o formato esperado pela API Anthropic). Modelo mantido em claude-sonnet-4-5 por decisao do Luiz. TODO: substituir WA_EXECUTOR_ID_TODO pelo ID real no n8n UI."
+}

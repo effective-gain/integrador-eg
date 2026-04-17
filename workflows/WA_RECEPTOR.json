@@ -1,0 +1,54 @@
+{
+  "name": "WA_RECEPTOR",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-receptor",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook Evolution API",
+      "type": "n8n-nodes-base.webhook",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Identifica grupo e extrai mensagem da Evolution API\nconst body = $input.first().json;\n\n// Mapeia grupos para projetos\nconst GRUPOS = {\n  'K2Con': 'k2con',\n  'EG Food': 'eg_food',\n  'Gestao EG': 'gestao_eg',\n  'MKT EG': 'mkt_eg',\n  'Quickbooks': 'quickbooks'\n};\n\nconst nomeGrupo = body.data?.pushName || body.data?.notifyName || 'EG Geral';\nconst projeto = GRUPOS[nomeGrupo] || 'geral';\nconst tipoMensagem = body.data?.message?.audioMessage ? 'audio' : 'texto';\nconst mensagemTexto = body.data?.message?.conversation || body.data?.message?.extendedTextMessage?.text || '';\nconst audioUrl = body.data?.message?.audioMessage ? body.data?.message?.url : null;\n\nreturn [{\n  json: {\n    grupo: nomeGrupo,\n    projeto,\n    tipo_mensagem: tipoMensagem,\n    mensagem_texto: mensagemTexto,\n    audio_url: audioUrl,\n    remetente: body.data?.key?.remoteJid,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Identificar Grupo e Mensagem",
+      "type": "n8n-nodes-base.code",
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.tipo_mensagem }}",
+              "value2": "audio"
+            }
+          ]
+        }
+      },
+      "name": "Audio ou Texto?",
+      "type": "n8n-nodes-base.if",
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution API": {
+      "main": [[ { "node": "Identificar Grupo e Mensagem", "type": "main", "index": 0 } ]]
+    },
+    "Identificar Grupo e Mensagem": {
+      "main": [[ { "node": "Audio ou Texto?", "type": "main", "index": 0 } ]]
+    },
+    "Audio ou Texto?": {
+      "main": [
+        [ { "node": "WA_WHISPER", "type": "main", "index": 0 } ],
+        [ { "node": "WA_CLASSIFIER", "type": "main", "index": 0 } ]
+      ]
+    }
+  },
+  "notes": "Recebe webhook da Evolution API. Identifica grupo/projeto. Roteia para Whisper se áudio ou direto para Classifier se texto."
+}

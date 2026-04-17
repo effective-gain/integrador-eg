@@ -1,0 +1,59 @@
+{
+  "name": "WA_WHISPER",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $json.audio_url }}",
+        "options": {}
+      },
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.OPENAI_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "whisper-1" },
+            { "name": "language", "value": "pt" },
+            { "name": "file", "value": "={{ $binary.data }}" }
+          ]
+        }
+      },
+      "name": "Whisper Transcrição",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Adiciona transcrição ao contexto\nconst input = $('WA_RECEPTOR').first().json;\nconst transcricao = $input.first().json.text;\n\nreturn [{\n  json: {\n    ...input,\n    mensagem_texto: transcricao,\n    tipo_mensagem: 'audio_transcrito'\n  }\n}];"
+      },
+      "name": "Merge com Contexto",
+      "type": "n8n-nodes-base.code",
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Download Audio": {
+      "main": [[ { "node": "Whisper Transcrição", "type": "main", "index": 0 } ]]
+    },
+    "Whisper Transcrição": {
+      "main": [[ { "node": "Merge com Contexto", "type": "main", "index": 0 } ]]
+    },
+    "Merge com Contexto": {
+      "main": [[ { "node": "WA_CLASSIFIER", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "Recebe URL do áudio da Evolution API. Transcreve via OpenAI Whisper (pt-BR). Passa texto para o Classifier."
+}
