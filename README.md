@@ -58,9 +58,48 @@ O cliente confirma e só então a execução acontece. Esse comportamento é pad
 ### Tipo de ações possíveis
 
 - Entrar em uma página web, fazer login e executar uma ação específica (ex: QuickBooks, portais de fornecedores)
+- Receber documentos (cupons fiscais, invoices, arquivos) e lançar na plataforma correta
 - Responder clientes em redes sociais em tempo real — sem API oficial, via automação de browser
 - Criar, atualizar ou consultar registros em sistemas integrados
-- Áudio ou texto como gatilho — ambos são suportados
+- Enviar resumo diário de todas as ações executadas para o cliente
+- Áudio, texto ou arquivo como gatilho — todos são suportados
+
+### Exemplo real: lançamento de cupom fiscal
+
+Este é o fluxo que melhor ilustra o produto funcionando de ponta a ponta:
+
+```
+Cliente envia cupom fiscal no grupo WhatsApp
+        │
+        ▼
+Agente recebe via Evolution API
+Identifica: tipo = documento fiscal, cliente = [nome]
+        │
+        ▼
+Agente responde no grupo:
+"Recebi um cupom fiscal de R$ [valor] — [fornecedor].
+Posso lançar na plataforma financeira?"
+        │
+        ▼
+Cliente responde: OK
+        │
+        ▼
+Agente abre a plataforma financeira via browser
+Faz login com as credenciais do cofre do cliente
+Navega até a posição correta
+Sobe o arquivo e preenche os campos necessários
+        │
+        ▼
+Registra a ação no diário do cliente no Obsidian:
+[data/hora] Cupom fiscal lançado — R$ [valor] — [fornecedor]
+        │
+        ▼
+Ao final do dia:
+Agente envia resumo no grupo WhatsApp com
+todas as ações executadas naquele dia
+```
+
+O que torna esse fluxo poderoso não é a ação em si — é que **ele é desenhado uma vez e executado infinitas vezes**, de forma autônoma, com rastreabilidade completa. O cliente nunca precisa acessar a plataforma financeira diretamente.
 
 ---
 
