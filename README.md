@@ -541,48 +541,54 @@ integrador-eg/
 
 ## Curva ABC — gargalos e dinâmicas da operação
 
-### Classe A — Críticos. Se quebrar, o produto para.
+### Decisões de infraestrutura já tomadas
+
+**Infraestrutura: nuvem é o destino, não uma opção**
+Hoje o sistema roda em máquina local com nobreak. Isso é a fase 1. O objetivo é migrar para uma máquina em nuvem — porque a entrega não pode perder contexto nem falhar. A disponibilidade precisa ser 100%, independente do que acontece no ambiente físico. O modelo de referência é o OpenClawd: sempre ativo, com segurança clara e documentada.
+
+**Modelo de negócio das automações**
+Automações detalhadas seguem o padrão do EG OS: **setup inicial + mensalidade**. O setup cobre o mapeamento, a construção da receita, os testes e o onboarding. A mensalidade cobre a operação, a manutenção e a evolução contínua.
+
+---
+
+### Classe A — Críticos. Tolerância zero a falha.
 
 **1. Sessão de browser**
-O sistema inteiro depende de sessões ativas no Chrome. Se a sessão cai e a restauração falha, nenhuma automação executa. Cada plataforma nova é um ponto de falha novo. É o gargalo número 1.
+O sistema inteiro depende de sessões ativas. Se a sessão cai e a restauração falha, nenhuma automação executa. Cada plataforma é um ponto de falha independente. Solução: módulo de gestão de sessão por plataforma, com monitoramento contínuo e restauração automática.
 
-**2. Máquina local como único ponto de execução**
-Tudo roda nessa máquina. Queda de energia, travamento, atualização forçada do sistema — o produto para. Sem redundância hoje. É o risco estrutural mais alto do modelo atual.
+**2. Infraestrutura de execução**
+Hoje: máquina local com nobreak. Destino: máquina em nuvem com uptime garantido. Enquanto estiver local, qualquer queda para tudo. A migração para nuvem é pré-requisito para escalar para múltiplos clientes com SLA real.
 
 **3. Interpretação da mensagem pelo Claude**
-Se o agente entender errado o que o cliente pediu e o cliente confirmar sem ler, uma ação errada é executada. A mensagem de confirmação precisa ser inequívoca — mostrar exatamente o que vai acontecer antes de agir.
+Prompt específico por cliente com DNA exclusivo elimina ambiguidade estrutural. A mensagem de confirmação precisa mostrar exatamente o que vai executar — o cliente confirma ciente, não no escuro.
 
-**4. Credenciais e 2FA**
-Login automático quebra quando o sistema exige autenticação de dois fatores via SMS ou app autenticador. O agente não captura esse código sozinho. Bloqueio real em várias plataformas — precisa de solução antes de mapear a receita.
+**4. 2FA — solução via e-mail**
+Login automático quebra em sistemas com 2FA por SMS ou app. A abordagem definida: plataformas que permitem 2FA por e-mail usarão esse canal — o agente acessa o e-mail do cliente, captura o código e completa o login. Para plataformas que só aceitam SMS ou app autenticador, precisa de solução caso a caso antes de escrever a receita.
 
----
+**5. Monitoramento de UI das plataformas**
+Quando um portal muda o layout, o script Playwright quebra. Solução: documentar todos os seletores e estruturas de interface usados nas receitas + sistema de verificação periódica com contagem de erros + notificação imediata ao time de devs quando um script falha. Quanto mais receitas ativas, mais crítico esse monitoramento.
 
-### Classe B — Importantes. Degradam o produto se ignorados.
+**6. Briefing matinal**
+É uma automação, não um "nice to have". Tolerância zero a falha. Deve ter retry automático, log de execução e alerta ao time EG se não disparar no horário.
 
-**5. Mudanças de UI nas plataformas**
-Quando QuickBooks, Instagram ou qualquer portal muda o layout, o script Playwright quebra silenciosamente. Quanto mais receitas ativas, mais manutenção. Precisa de monitoramento e processo de atualização rápida.
+**7. Diário do cliente no Obsidian**
+Cada ação executada deve ser registrada sem exceção. É a fonte de verdade do que foi feito. Falha no registro = perda de dado irreversível. Precisa de confirmação de escrita e alerta se o registro não for confirmado.
 
-**6. Qualidade da receita**
-A execução é tão confiável quanto a receita que a descreve. Um passo vago gera comportamento imprevisível. A EG precisa de padrão rigoroso de escrita e teste obrigatório antes de qualquer receita ir ao ar.
-
-**7. Onboarding de cliente novo**
-Cada cliente novo demanda: cofre no Obsidian, perfil Chrome, receitas mapeadas, prompt desenvolvido e testado. É trabalho manual. Sem um processo padrão e estimativa de tempo, o onboarding não escala.
-
-**8. Volume inesperado**
-Se um cliente gera mais ações do que o previsto, as execuções precisam de fila. Sem fila, ações simultâneas se sobrepõem e geram erros. A fila é infraestrutura básica antes de colocar mais de um cliente em produção.
+**8. Resumo e briefing dependem do diário**
+O briefing matinal consolida o diário. Se o diário falha, o briefing falha. Os três são uma cadeia: execução → diário → briefing. A cadeia precisa ser 100%.
 
 ---
 
-### Classe C — Monitoramento. Tolerantes a falha pontual, mas importantes na recorrência.
+### Classe B — Importantes. Degradam o produto se negligenciados.
 
-**9. Briefing matinal**
-Falha num dia não impacta operação. Falha toda semana gera desconfiança do cliente.
+**9. Qualidade da receita**
+A execução é tão confiável quanto a receita. Passo vago = comportamento imprevisível. Padrão rigoroso de escrita + teste obrigatório antes de qualquer receita ir ao ar. Segue o padrão EG OS de documentação.
 
-**10. Diário do Obsidian**
-Se uma entrada não for registrada, o dado se perde. Não quebra a operação, mas compromete o histórico e o controle de volume — que é exatamente o que justifica o valor do serviço.
+**10. Onboarding de cliente novo**
+Cofre no Obsidian + perfil Chrome + receitas + prompt + testes = trabalho estruturado. Precisa de checklist e estimativa de tempo padrão para não travar o crescimento.
 
-**11. Resumo de ações**
-Depende do diário estar correto. Gap no diário = gap no resumo = cliente percebe que algo não foi registrado.
+**11. Fila de execução por cliente**
+Não é complexo de implementar, mas é pré-requisito antes de ter mais de um cliente ativo. Sem fila, ações simultâneas colidem.
 
 ---
 
@@ -592,14 +598,17 @@ Depende do diário estar correto. Gap no diário = gap no resumo = cliente perce
 |---|----------|-----------|
 | 1 | Ação clara → cliente confirma | Executa → registra no diário → ok |
 | 2 | Mensagem ambígua | Agente pede esclarecimento antes de confirmar |
-| 3 | Cliente confirma → execução falha | Retry automático → se falhar 2x, alerta EG |
+| 3 | Cliente confirma → execução falha | Retry automático → se falhar 2x, alerta time EG |
 | 4 | Sessão expirada | Restauração silenciosa → executa → cliente não vê |
-| 5 | Sessão falha na restauração | EG é alertada → ação entra em fila até resolução |
-| 6 | Sistema exige 2FA | Ação pausada → EG alertada → resolve infraestrutura antes de reativar |
-| 7 | UI da plataforma mudou | Script quebra → EG alertada → receita atualizada antes de reativar |
-| 8 | Volume alto no dia | Fila de execução → processa em ordem → diário registra tudo |
-| 9 | Ação fora do escopo | Agente recusa com mensagem clara → registra no diário |
-| 10 | Máquina offline | Ações perdidas → gap no diário → cliente recebe explicação no briefing do dia seguinte |
+| 5 | Sessão falha na restauração | EG alertada → ação entra em fila até resolução |
+| 6 | Sistema exige 2FA por e-mail | Agente acessa e-mail → captura código → completa login |
+| 7 | Sistema exige 2FA por SMS/app | Ação pausada → EG alertada → solução de infraestrutura antes de reativar |
+| 8 | UI da plataforma mudou | Script falha → monitoramento detecta → EG alertada → receita atualizada antes de reativar |
+| 9 | Volume alto no dia | Fila por cliente → processa em ordem → diário registra tudo |
+| 10 | Ação fora do escopo | Agente recusa com mensagem clara → registra no diário |
+| 11 | Briefing não disparou no horário | Retry automático → se falhar, alerta EG → execução manual |
+| 12 | Máquina local offline (fase 1) | Ações perdidas → gap no diário → registrado quando voltar |
+| 13 | Máquina em nuvem (fase 2) | Sem downtime → fila persiste → execução continua quando agente retorna |
 
 ---
 
