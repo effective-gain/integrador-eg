@@ -442,9 +442,12 @@ Cada cliente tem seu próprio **cofre no Obsidian** — um vault dedicado que fu
 - Tom de voz, vocabulário, valores da marca
 - Processos de trabalho repetitivos que serão executados de forma autônoma
 - Histórico de decisões e contexto acumulado
+- Receitas de automação: cada ação mapeada com gatilho, URL, credenciais, passo a passo e saída
 - Limites do que o agente pode e não pode fazer para aquele cliente
 
 Esse cofre alimenta o Claude com contexto rico antes de cada ação. O agente não age no escuro — age com o DNA do cliente carregado. O Obsidian é o repositório vivo desse conhecimento, e ele cresce com o tempo à medida que a EG aprende mais sobre cada cliente.
+
+**O cofre nunca é acessado pelo cliente.** Ele é a inteligência da EG — o mecanismo que entrega o resultado. O cliente vê o output, não o processo. Dar acesso ao cofre seria entregar o produto inteiro: o cliente poderia replicar o serviço internamente ou apresentar o modelo para outro fornecedor, quebrando o vínculo de recorrência. A caixa preta é intencional e é o que mantém o contrato.
 
 ### Gestão de sessão (transparente para o cliente)
 
@@ -454,8 +457,9 @@ Quando uma sessão cai em qualquer rede social, o sistema EG restaura automatica
 
 O fluxo de construção do prompt de cada cliente é:
 1. **EG desenvolve** — com base no cofre do cliente no Obsidian, no DNA da marca e nos objetivos definidos
-2. **Cliente testa** — período de validação onde o cliente aprova as respostas antes de ir ao ar
-3. **Deploy** — prompt homologado entra em produção
+2. **EG valida tecnicamente** — testa, ajusta e garante que o comportamento está correto antes de apresentar
+3. **Cliente verifica** — vê o resultado final funcionando e diz se está ok. Não vê o mecanismo, só o output
+4. **Deploy** — prompt homologado entra em produção
 
 ### Guardrails globais (parâmetros fixos para todos os clientes)
 
