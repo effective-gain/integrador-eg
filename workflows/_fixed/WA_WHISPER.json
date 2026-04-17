@@ -1,0 +1,82 @@
+{
+  "name": "WA_WHISPER",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.audio_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "whisper-1" },
+            { "name": "language", "value": "pt" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Whisper Transcricao",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Anexa transcricao ao contexto recebido do WA_RECEPTOR via Execute Workflow.\nconst contexto = $('Execute Workflow Trigger').first().json;\nconst transcricao = $input.first().json.text;\n\nreturn [{\n  json: {\n    ...contexto,\n    mensagem_texto: transcricao,\n    tipo_mensagem: 'audio_transcrito'\n  }\n}];"
+      },
+      "name": "Merge com Contexto",
+      "type": "n8n-nodes-base.code",
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "WA_CLASSIFIER_ID_TODO"
+      },
+      "name": "-> WA_CLASSIFIER",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[ { "node": "Download Audio", "type": "main", "index": 0 } ]]
+    },
+    "Download Audio": {
+      "main": [[ { "node": "Whisper Transcricao", "type": "main", "index": 0 } ]]
+    },
+    "Whisper Transcricao": {
+      "main": [[ { "node": "Merge com Contexto", "type": "main", "index": 0 } ]]
+    },
+    "Merge com Contexto": {
+      "main": [[ { "node": "-> WA_CLASSIFIER", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "PATCH v2 (2026-04-17) - Corrige B1 (entrada via Execute Workflow Trigger) e B4 (download binario com responseFormat: file + Whisper com sendBinaryData + binaryPropertyName: data). TODO: substituir WA_CLASSIFIER_ID_TODO pelo ID real no n8n UI."
+}

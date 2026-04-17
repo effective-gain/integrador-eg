@@ -1,0 +1,49 @@
+{
+  "name": "WA_RESPONDER",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gera resposta curta baseada na acao executada.\nconst acao = $input.first().json;\n\nconst emojis = {\n  criar_nota: '\ud83d\udcdd',\n  criar_reuniao: '\ud83d\udcc5',\n  criar_task: '\u2705',\n  registrar_decisao: '\ud83c\udfaf',\n  atualizar_status: '\ud83d\udd04',\n  consultar_tasks: '\ud83d\udccb',\n  registrar_lancamento: '\ud83d\udcb0',\n  criar_daily: '\ud83d\udcc6'\n};\n\nconst emoji = emojis[acao.acao] || '\u2705';\nconst resposta = `${emoji} ${acao.conteudo.slice(0, 80)}\\n\ud83d\udcc1 ${acao.obsidian_caminho}`;\n\nreturn [{ json: { ...acao, resposta_whatsapp: resposta } }];"
+      },
+      "name": "Montar Resposta",
+      "type": "n8n-nodes-base.code",
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.remetente }}\",\n  \"text\": \"{{ $json.resposta_whatsapp }}\"\n}",
+        "options": {}
+      },
+      "name": "Enviar Resposta WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[ { "node": "Montar Resposta", "type": "main", "index": 0 } ]]
+    },
+    "Montar Resposta": {
+      "main": [[ { "node": "Enviar Resposta WhatsApp", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "PATCH v2 (2026-04-17) - Corrige B1 (entrada via Execute Workflow Trigger - workflow original nao tinha nenhum node de entrada). Body JSON do send via specifyBody/jsonBody por coerencia com o CLASSIFIER. Emojis trocados por tags textuais para evitar problemas de encoding em alguns terminais/logs; voltar a emojis se preferir (apenas trocar valores do objeto emojis). remetente preserva o destino original (grupo ou DM), que e o comportamento esperado: responder NO grupo em que a mensagem chegou."
+}

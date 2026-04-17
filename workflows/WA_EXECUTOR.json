@@ -1,0 +1,47 @@
+{
+  "name": "WA_EXECUTOR",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Monta caminho e conteúdo da nota baseado na ação\nconst acao = $input.first().json;\nconst data = new Date().toISOString().split('T')[0];\nconst hora = new Date().toTimeString().slice(0,5);\n\nlet caminho, conteudo, metodo;\n\nif (acao.acao === 'criar_nota') {\n  caminho = `04 - Inbox/${data}-${acao.projeto}.md`;\n  conteudo = `---\\ntipo: inbox\\ndata: ${data}\\ntags: [inbox, ${acao.projeto}]\\n---\\n\\n# ${acao.conteudo.slice(0,50)}\\n\\n${acao.conteudo}\\n`;\n  metodo = 'PUT';\n\n} else if (acao.acao === 'criar_reuniao') {\n  caminho = `04 - Inbox/Reuniao-${data}-${acao.projeto}.md`;\n  conteudo = `---\\ntipo: reuniao\\ndata: ${data}\\nprojeto: ${acao.projeto}\\ntags: [reuniao, ${acao.projeto}]\\n---\\n\\n# Reuniao ${data}\\n\\n## Discussao\\n${acao.conteudo}\\n\\n## Acoes\\n- [ ] \\n`;\n  metodo = 'PUT';\n\n} else if (acao.acao === 'criar_task') {\n  caminho = acao.destinatario || `04 - Inbox/${data}-tasks.md`;\n  conteudo = `\\n- [ ] ${acao.conteudo} — ${data}\\n`;\n  metodo = 'POST'; // POST faz append\n\n} else if (acao.acao === 'registrar_lancamento') {\n  caminho = `04 - Inbox/Lancamento-${data}-${acao.projeto}.md`;\n  conteudo = `---\\ntipo: lancamento\\ndata: ${data}\\nprojeto: ${acao.projeto}\\ntags: [financeiro, ${acao.projeto}]\\n---\\n\\n# Lancamento ${data}\\n\\n${acao.conteudo}\\n`;\n  metodo = 'PUT';\n\n} else if (acao.acao === 'registrar_decisao') {\n  caminho = `03 - Decisoes/${data}-${acao.projeto}.md`;\n  conteudo = `---\\ntipo: decisao\\ndata: ${data}\\nprojeto: ${acao.projeto}\\nstatus: decidido\\ntags: [decisao, ${acao.projeto}]\\n---\\n\\n# Decisao: ${acao.conteudo.slice(0,50)}\\n\\n## Decisao tomada\\n${acao.conteudo}\\n`;\n  metodo = 'PUT';\n\n} else {\n  caminho = `04 - Inbox/${data}-${acao.acao}-${acao.projeto}.md`;\n  conteudo = `---\\ntipo: ${acao.acao}\\ndata: ${data}\\ntags: [${acao.projeto}]\\n---\\n\\n${acao.conteudo}\\n`;\n  metodo = 'PUT';\n}\n\nreturn [{ json: { ...acao, obsidian_caminho: caminho, obsidian_conteudo: conteudo, obsidian_metodo: metodo } }];"
+      },
+      "name": "Preparar Nota Obsidian",
+      "type": "n8n-nodes-base.code",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://127.0.0.1:27124/vault/{{ encodeURIComponent($json.obsidian_caminho) }}",
+        "method": "={{ $json.obsidian_metodo }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd" },
+            { "name": "Content-Type", "value": "text/markdown" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "", "value": "={{ $json.obsidian_conteudo }}" }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "name": "Obsidian REST API",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Preparar Nota Obsidian": {
+      "main": [[ { "node": "Obsidian REST API", "type": "main", "index": 0 } ]]
+    },
+    "Obsidian REST API": {
+      "main": [[ { "node": "WA_RESPONDER", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "Recebe JSON da ação. Monta caminho e conteúdo da nota. Executa na Obsidian REST API (PUT para criar, POST para append). Passa resultado para o Responder."
+}

@@ -1,0 +1,70 @@
+{
+  "name": "WA_RECEPTOR",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-receptor",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook Evolution API",
+      "type": "n8n-nodes-base.webhook",
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Identifica grupo pelo JID (formato: xxxxx@g.us) e extrai mensagem.\n// FIX B2: antes usava body.data.pushName, que e o nome do remetente, nao do grupo.\n// Agora usa key.remoteJid (JID do grupo) + tabela MAPA_GRUPOS.\n\nconst body = $input.first().json;\n\n// TODO Luiz: preencher os JIDs reais de cada grupo.\n// Como obter: GET {{EVOLUTION_API_URL}}/group/fetchAllGroups/{{EVOLUTION_INSTANCE}}\n// Cada grupo tem campo 'id' com o formato 120363xxxxxxx@g.us\nconst MAPA_GRUPOS = {\n  'TODO_K2CON@g.us':       { nome: 'K2Con',      projeto: 'k2con' },\n  'TODO_EG_FOOD@g.us':     { nome: 'EG Food',    projeto: 'eg_food' },\n  'TODO_GESTAO_EG@g.us':   { nome: 'Gestao EG',  projeto: 'gestao_eg' },\n  'TODO_MKT_EG@g.us':      { nome: 'MKT EG',     projeto: 'mkt_eg' },\n  'TODO_QUICKBOOKS@g.us':  { nome: 'Quickbooks', projeto: 'quickbooks' },\n  'TODO_EG_GERAL@g.us':    { nome: 'EG Geral',   projeto: 'geral' }\n};\n\nconst remoteJid = body.data?.key?.remoteJid || '';\nconst isGrupo = remoteJid.endsWith('@g.us');\nconst info = MAPA_GRUPOS[remoteJid] || { nome: 'EG Geral', projeto: 'geral' };\n\nconst tipoMensagem = body.data?.message?.audioMessage ? 'audio' : 'texto';\nconst mensagemTexto = body.data?.message?.conversation\n  || body.data?.message?.extendedTextMessage?.text\n  || '';\nconst audioUrl = body.data?.message?.audioMessage\n  ? (body.data?.message?.audioMessage?.url || body.data?.url)\n  : null;\n\nreturn [{\n  json: {\n    grupo: info.nome,\n    projeto: info.projeto,\n    remote_jid: remoteJid,\n    is_grupo: isGrupo,\n    tipo_mensagem: tipoMensagem,\n    mensagem_texto: mensagemTexto,\n    audio_url: audioUrl,\n    remetente: remoteJid,\n    participante: body.data?.key?.participant || '',\n    push_name_remetente: body.data?.pushName || '',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Identificar Grupo e Mensagem",
+      "type": "n8n-nodes-base.code",
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.tipo_mensagem }}",
+              "value2": "audio"
+            }
+          ]
+        }
+      },
+      "name": "Audio ou Texto?",
+      "type": "n8n-nodes-base.if",
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "WA_WHISPER_ID_TODO"
+      },
+      "name": "-> WA_WHISPER",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "workflowId": "WA_CLASSIFIER_ID_TODO"
+      },
+      "name": "-> WA_CLASSIFIER",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "position": [900, 380]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution API": {
+      "main": [[ { "node": "Identificar Grupo e Mensagem", "type": "main", "index": 0 } ]]
+    },
+    "Identificar Grupo e Mensagem": {
+      "main": [[ { "node": "Audio ou Texto?", "type": "main", "index": 0 } ]]
+    },
+    "Audio ou Texto?": {
+      "main": [
+        [ { "node": "-> WA_WHISPER", "type": "main", "index": 0 } ],
+        [ { "node": "-> WA_CLASSIFIER", "type": "main", "index": 0 } ]
+      ]
+    }
+  },
+  "notes": "PATCH v2 (2026-04-17) - Corrige B1 (estrutura modular com Execute Workflow) e B2 (identificacao de grupo via key.remoteJid + MAPA_GRUPOS). TODOs: (a) preencher JIDs reais dos 6 grupos no MAPA_GRUPOS; (b) no n8n UI, substituir WA_WHISPER_ID_TODO e WA_CLASSIFIER_ID_TODO pelos IDs reais dos workflows filhos (apos importar os outros 4 JSONs)."
+}

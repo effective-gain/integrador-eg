@@ -1,0 +1,191 @@
+{
+  "name": "INSTA_KEEPER",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "name": "Schedule — A cada 30 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [240, 300],
+      "notes": "Dispara a cada 30 minutos. Ajuste conforme necessidade (mínimo recomendado: 20 min)."
+    },
+    {
+      "parameters": {
+        "command": "python \"C:\\Users\\user\\Desktop\\GitHub - Effective Gain\\Projetos no Claude\\whatsapp_os\\scripts\\instagram_keeper.py\" --status"
+      },
+      "name": "Checar Sessão Instagram",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [460, 300],
+      "notes": "Executa script Python. Exit code 0 = logado. Exit code 1 = sessão expirada."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.exitCode }}",
+              "operation": "equal",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "name": "Sessão expirada?",
+      "type": "n8n-nodes-base.if",
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "command": "python \"C:\\Users\\user\\Desktop\\GitHub - Effective Gain\\Projetos no Claude\\whatsapp_os\\scripts\\instagram_keeper.py\""
+      },
+      "name": "Restaurar Login",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [900, 200],
+      "notes": "Abre Chrome com perfil salvo e usa autofill para relogar. Exit code 0 = sucesso."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.exitCode }}",
+              "operation": "equal",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "name": "Login falhou?",
+      "type": "n8n-nodes-base.if",
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "5531972244045"
+            },
+            {
+              "name": "text",
+              "value": "🔴 *Instagram Keeper* — Sessão expirada e login automático falhou.\n\nAcesse o Chrome manualmente e confirme que a senha está salva no gerenciador de senhas.\n\n⏰ {{ $now }}"
+            }
+          ]
+        }
+      },
+      "name": "Alertar Luiz no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1340, 140],
+      "notes": "Envia alerta para +55 31 97224-4045 quando login automático falha."
+    },
+    {
+      "parameters": {
+        "url": "https://127.0.0.1:27124/vault/{{ encodeURIComponent('04 - Inbox/Instagram-Keeper-Log.md') }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd"
+            },
+            { "name": "Content-Type", "value": "text/markdown" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "\n- ✅ Login restaurado automaticamente — {{ $now }}\n"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "name": "Log Obsidian — Restaurado",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1340, 260],
+      "notes": "Registra no Obsidian quando o login foi restaurado com sucesso."
+    },
+    {
+      "parameters": {
+        "url": "https://127.0.0.1:27124/vault/{{ encodeURIComponent('04 - Inbox/Instagram-Keeper-Log.md') }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd"
+            },
+            { "name": "Content-Type", "value": "text/markdown" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "\n- 🔴 FALHA no login automático — {{ $now }} — requer ação manual\n"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "name": "Log Obsidian — Falha",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1560, 140]
+    }
+  ],
+  "connections": {
+    "Schedule — A cada 30 min": {
+      "main": [[ { "node": "Checar Sessão Instagram", "type": "main", "index": 0 } ]]
+    },
+    "Checar Sessão Instagram": {
+      "main": [[ { "node": "Sessão expirada?", "type": "main", "index": 0 } ]]
+    },
+    "Sessão expirada?": {
+      "main": [
+        [ { "node": "Restaurar Login", "type": "main", "index": 0 } ],
+        []
+      ]
+    },
+    "Restaurar Login": {
+      "main": [[ { "node": "Login falhou?", "type": "main", "index": 0 } ]]
+    },
+    "Login falhou?": {
+      "main": [
+        [ { "node": "Alertar Luiz no WhatsApp", "type": "main", "index": 0 } ],
+        [ { "node": "Log Obsidian — Restaurado", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Alertar Luiz no WhatsApp": {
+      "main": [[ { "node": "Log Obsidian — Falha", "type": "main", "index": 0 } ]]
+    }
+  },
+  "notes": "Verifica sessão Instagram a cada 30 min. Se expirada, restaura via Chrome autofill. Se falhar, alerta Luiz via WhatsApp e loga no Obsidian."
+}
