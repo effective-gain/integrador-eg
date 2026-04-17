@@ -722,7 +722,168 @@ Fase 3 — Braço 1 (produto do segmento)
 
 ---
 
-## Status atual
+## Fase 1 — Validação interna da EG
+
+Antes de vender o produto, a EG roda o produto. As automações abaixo são as primeiras a serem construídas e testadas dentro da própria operação da EG. Cada uma que funcionar vira receita validada — pronta para virar produto.
+
+### Automações internas prioritárias
+
+**1. Briefing matinal da EG (toda manhã às 8h)**
+O que chega no WhatsApp da EG toda manhã:
+- E-mails recebidos no dia anterior que precisam de ação
+- Tarefas abertas no Obsidian sem prazo ou com prazo vencido
+- Ações executadas no dia anterior (resumo do diário)
+- Pendências de clientes ativos
+
+Por que primeiro: é a automação de maior impacto imediato para a operação interna e valida toda a cadeia (diário → consolidação → envio).
+
+**2. Registro de ação via WhatsApp → Obsidian**
+Qualquer membro da EG manda mensagem no grupo interno e o agente registra no lugar certo do Obsidian. Já existe parcialmente no módulo WhatsApp OS — esta fase é refinamento e uso real contínuo.
+
+**3. Digest de e-mail da EG**
+Agente lê a caixa de entrada da EG, classifica por urgência e envia resumo no WhatsApp com: o que chegou, o que precisa de resposta hoje, o que pode esperar. Valida a receita que será replicada para o Braço 1 (subcontratados).
+
+---
+
+## Fase 2 — Braço 1: receitas do subcontratado (as 5 essenciais)
+
+O subcontratado precisa de exatamente cinco coisas no dia a dia. Nada mais, nada menos. Essas cinco receitas são o produto inteiro do Braço 1.
+
+### Receita 1 — Enviar invoice para o contratante
+
+```
+GATILHO
+  Subcontratado manda foto ou PDF da invoice no WhatsApp
+
+CONFIRMAÇÃO
+  "Invoice de $[valor] para [empresa]. Envio agora?"
+
+EXECUÇÃO
+  Agente acessa o sistema do contratante (ou envia por e-mail
+  formatado conforme padrão do contratante)
+  Preenche os campos obrigatórios
+  Submete
+
+SAÍDA
+  "Invoice enviada ✅" no WhatsApp
+  Registro no diário do cliente
+```
+
+### Receita 2 — Digest de e-mail (diário, às 8h)
+
+```
+GATILHO
+  Agendamento diário às 8h (horário do cliente)
+
+EXECUÇÃO
+  Agente lê caixa de entrada do e-mail do cliente
+  Classifica: urgente / ação necessária / informativo / ignorar
+  Monta resumo em português ou espanhol
+
+SAÍDA
+  Mensagem no WhatsApp:
+  "Bom dia. Seus e-mails de ontem:
+   🔴 [X] precisam de resposta hoje
+   🟡 [Y] são informativos
+   📎 [Z] são documentos — arquivei automaticamente"
+```
+
+### Receita 3 — Registrar pagamento recebido
+
+```
+GATILHO
+  Cliente manda "recebi $X do trabalho Y" no WhatsApp
+
+CONFIRMAÇÃO
+  "Pagamento de $X referente a [trabalho Y]. Registro agora?"
+
+EXECUÇÃO
+  Acessa QuickBooks (ou sistema configurado)
+  Marca invoice correspondente como paga
+  Registra data e valor
+
+SAÍDA
+  Confirmação no WhatsApp + registro no diário
+```
+
+### Receita 4 — Consultar o que está em aberto
+
+```
+GATILHO
+  Cliente pergunta "o que ainda não me pagaram?" ou similar
+
+EXECUÇÃO
+  Agente lê invoices em aberto no sistema
+  Ordena por data de vencimento
+
+SAÍDA
+  Resposta em português/espanhol:
+  "Você tem [X] invoices em aberto:
+   • $[valor] — [empresa] — vence [data]
+   • $[valor] — [empresa] — VENCIDA há [X] dias"
+```
+
+### Receita 5 — Arquivar documento
+
+```
+GATILHO
+  Cliente manda foto ou arquivo (W-9, contrato, certificado, licença)
+
+EXECUÇÃO
+  Agente identifica o tipo de documento
+  Salva na pasta correta com nome padronizado
+  [data]-[tipo]-[empresa].pdf
+
+SAÍDA
+  "W-9 da empresa X arquivado ✅"
+  Registro no diário
+```
+
+Essas cinco receitas cobrem 90% do trabalho administrativo repetitivo de um subcontratado. O produto do Braço 1 é exatamente isso — nem mais, nem menos.
+
+---
+
+## Fase 3 — Braço 2: processo de construção do cofre premium
+
+O cofre premium não é um template preenchido — é construído junto com o cliente ao longo de um processo estruturado. Esse processo é o setup que é cobrado separadamente da mensalidade.
+
+### Etapa 1 — Discovery (semana 1)
+
+A EG conduz sessões para entender:
+- Como o cliente pensa e toma decisões
+- Quais sistemas usa e com quais frequências
+- Quais tarefas consome mais tempo hoje
+- Qual o tom de comunicação com clientes, fornecedores e equipe
+- O que nunca pode ser feito errado (os processos críticos)
+- O que pode ser automatizado imediatamente vs o que precisa de cuidado
+
+Saída da etapa: mapa de processos e lista de receitas a construir, priorizada.
+
+### Etapa 2 — Construção do cofre (semana 2-3)
+
+A EG monta o cofre no Obsidian:
+- DNA do cliente: tom, vocabulário, valores, limites
+- Processos mapeados em formato de receita
+- Credenciais organizadas de forma segura
+- Estrutura de diário e briefing configurada
+
+### Etapa 3 — Construção e teste das receitas (semana 3-4)
+
+Cada receita é:
+1. Escrita no padrão (gatilho, URL, credenciais, passo a passo, saída)
+2. Testada pela EG em ambiente controlado
+3. Ajustada até funcionar sem erro
+4. Documentada no cofre
+
+### Etapa 4 — Verificação pelo cliente (semana 4)
+
+Cliente vê o produto funcionando. Não vê o cofre — vê os outputs. Aprova o comportamento, sugere ajustes de tom ou escopo. A EG ajusta e fecha.
+
+### Etapa 5 — Go live + período de acompanhamento (mês 1)
+
+Produto em produção com monitoramento ativo da EG. Qualquer erro é corrigido antes que o cliente perceba. Ao final do primeiro mês, o cofre está maduro e a operação está estável.
+
+A partir do mês 2: mensalidade. O cofre continua crescendo conforme o cliente evolui.
 
 > **Fase:** WhatsApp OS e Instagram Keeper ativos. Social Responder em design — abordagem via browser definida, desafios mapeados.
 
