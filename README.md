@@ -189,26 +189,24 @@ Ações que afetam sistemas externos são irreversíveis ou difíceis de desfaze
 
 O Obsidian já está instalado e com workflows desenhados nesta máquina. Usá-lo como camada de design e documentação aproveita o que já existe. O diário de execuções resolve o problema de rastreabilidade sem precisar de um banco externo — pelo menos na fase inicial.
 
-### Decisão 7 — Redes sociais: API oficial onde existe, cloud phone onde não existe
+### Decisão 7 — Redes sociais: cloud phone Android por cliente, comportamento humano
 
-A abordagem mudou após análise do mercado. Não é "sem API" vs "com API" — é usar cada camada no nível certo de risco:
+**Sem API oficial.** A decisão é usar cloud phone Android para todas as redes sociais — não por limitação técnica, mas por design. A API oficial entrega resposta instantânea e padrão, o que parece bot. O objetivo é o oposto: o agente se comporta como um humano que está com o celular na mão.
 
-**Camada 1 — API oficial (seguro, prioritário)**
-Meta (Instagram + Facebook) oferece Graph API para DMs com limite de 200 mensagens/hora. Para a maioria dos clientes, isso é suficiente. É seguro, legal e sem risco de ban. TikTok e LinkedIn têm APIs mais restritas mas existem.
+Isso significa:
+- **Delays variáveis e realistas** — ninguém responde em 0.3 segundos. O agente espera um tempo aleatório dentro de uma janela humana (ex: 2 a 12 minutos dependendo do horário e do perfil do cliente)
+- **Padrão de atividade humano** — mais ativo de manhã e de tarde, menos ativo de madrugada
+- **Leitura antes de responder** — o agente simula o tempo de leitura da mensagem antes de começar a digitar
+- **Variação de comportamento** — às vezes responde rápido, às vezes demora mais. Nunca exatamente o mesmo intervalo
 
-**Camada 2 — Cloud phone Android (robusto, para o que API não cobre)**
-A intuição de "app no celular do cliente" é tecnicamente correta — a solução de produção é o **cloud phone**: um Android virtual rodando em servidor 24/7 com a sessão do cliente ativa. Cada cliente tem seu próprio Android isolado na nuvem. O agente usa UIAutomator2 (automação de acessibilidade Android) para ler notificações e responder como um humano faria no celular — sem passar pelo browser, sem ser detectado como bot. Ferramentas de referência: GeeLark, cloud phone farms.
+**Infraestrutura: 1 cloud phone Android por cliente**
+Cada cliente tem seu próprio Android virtual isolado na nuvem, com as sessões de todas as redes sociais configuradas e ativas 24/7. O agente (UIAutomator2) age dentro desse Android como se fosse o próprio dono do aparelho usando o celular.
 
-Essa abordagem é superior ao browser automation para redes sociais porque: a sessão é mobile (mais difícil de detectar), o dispositivo é isolado por cliente, e o comportamento imita o uso real de um smartphone.
-
-**Camada 3 — Browser automation (fallback, para plataformas sem alternativa)**
-Playwright com perfil Chrome, usado quando nem API nem cloud phone resolvem. Mais frágil — detectado mais facilmente e requer manutenção de UI frequente.
-
-**Rate limits respeitados para segurança:**
-- Máximo 50-100 ações/dia por conta
-- Delays variáveis entre ações (15-60 minutos)
-- Sem atividade entre 22h-6h (padrão humano)
-- Monitoramento de action blocks com pausa automática e alerta imediato
+Vantagens sobre browser automation para redes sociais:
+- Sessão mobile é indistinguível do uso real
+- Isolamento total entre clientes
+- Sem fingerprinting de browser headless
+- Sem risco de quebra por mudança de layout web (o app mobile muda menos e de forma mais controlada)
 
 ---
 
@@ -475,6 +473,23 @@ O fluxo de construção do prompt de cada cliente é:
 2. **EG valida tecnicamente** — testa, ajusta e garante que o comportamento está correto antes de apresentar
 3. **Cliente verifica** — vê o resultado final funcionando e diz se está ok. Não vê o mecanismo, só o output
 4. **Deploy** — prompt homologado entra em produção
+
+### Decisão 8 — Multilinguismo nativo
+
+O sistema precisa operar em múltiplos idiomas de forma transparente. Caso real: um brasileiro ou hispânico morando nos EUA usa o serviço. Ele se comunica em português ou espanhol, mas os sistemas que ele usa (QuickBooks, portais americanos) estão em inglês. O agente precisa:
+
+- **Entender o input no idioma do cliente** — português, espanhol, inglês, sem configuração especial
+- **Operar o sistema no idioma da plataforma** — preencher campos, navegar menus, interpretar erros em inglês
+- **Responder ao cliente no idioma dele** — a confirmação, o briefing matinal e o resumo diário sempre no idioma configurado no cofre do cliente
+
+Isso não é uma feature adicional — é uma consequência natural de usar Claude como cérebro. Claude opera nativamente em múltiplos idiomas. O cofre de cada cliente define qual idioma de entrada esperar e qual idioma usar nas respostas. A tradução acontece internamente, invisível para o cliente e para o sistema externo.
+
+Exemplos reais:
+- Cliente envia áudio em português: "preciso lançar essa nota fiscal" → agente entende, faz login no QuickBooks em inglês, executa, confirma em português
+- Fornecedor espanhol envia invoice → agente processa em espanhol, lança no sistema em inglês, notifica o cliente no idioma configurado
+- Cliente americano, equipe brasileira: o agente responde cada um no seu idioma dentro do mesmo fluxo
+
+---
 
 ### Guardrails globais (parâmetros fixos para todos os clientes)
 
