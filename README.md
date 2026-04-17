@@ -64,6 +64,19 @@ O cliente confirma e só então a execução acontece. Esse comportamento é pad
 - Enviar resumo diário de todas as ações executadas para o cliente
 - Áudio, texto ou arquivo como gatilho — todos são suportados
 
+### Briefing matinal
+
+Todo cliente pode ter um **briefing automático enviado via WhatsApp às 8h do dia seguinte**. O conteúdo é dinâmico e definido conforme a forma de trabalho de cada cliente. Um exemplo real:
+
+- Resumo de todas as ações executadas no dia anterior
+- E-mails recebidos que ainda não tiveram resposta ou ação
+- Questões em aberto que precisam de decisão
+- Tarefas pendentes do dia
+
+O horário e o conteúdo do briefing são configurados no cofre do cliente no Obsidian e podem mudar conforme a dinâmica evolui. O cliente começa o dia já informado, sem precisar abrir nenhum sistema.
+
+---
+
 ### Exemplo real: lançamento de cupom fiscal
 
 Este é o fluxo que melhor ilustra o produto funcionando de ponta a ponta:
@@ -100,6 +113,51 @@ todas as ações executadas naquele dia
 ```
 
 O que torna esse fluxo poderoso não é a ação em si — é que **ele é desenhado uma vez e executado infinitas vezes**, de forma autônoma, com rastreabilidade completa. O cliente nunca precisa acessar a plataforma financeira diretamente.
+
+---
+
+### Receita de automação — o padrão de desenho
+
+Para que o agente possa executar qualquer ação em qualquer site, cada automação precisa ser descrita como uma **receita**. Essa receita fica no cofre do cliente no Obsidian e é o que o agente lê antes de executar.
+
+Toda receita tem obrigatoriamente cinco elementos:
+
+```
+RECEITA: [nome da automação]
+─────────────────────────────────────────────
+GATILHO
+  O que dispara esta automação.
+  Ex: cliente envia arquivo .pdf no grupo WhatsApp
+
+URL
+  Endereço exato do sistema onde a ação será executada.
+  Ex: https://app.quickbooks.com/...
+
+CREDENCIAIS
+  Onde estão as credenciais de acesso.
+  Sempre salvas no cofre do cliente no Obsidian.
+  Nunca escritas diretamente na receita.
+  Ex: Cofre/[cliente]/Credenciais/QuickBooks
+
+PASSO A PASSO
+  Descrição exata do que fazer, em ordem.
+  Quanto mais específico, mais confiável a execução.
+  Ex:
+    1. Abrir URL e fazer login com as credenciais
+    2. Navegar para Despesas > Nova despesa
+    3. Preencher: fornecedor, valor, data (extraídos do arquivo)
+    4. Anexar o arquivo recebido
+    5. Clicar em Salvar
+
+SAÍDA
+  O que registrar após a execução e onde.
+  Ex:
+    - Registrar em: Diário do cliente > [data] > Lançamentos
+    - Confirmar no grupo: "Cupom fiscal de R$ [valor] lançado ✅"
+    - Incluir no briefing das 8h do dia seguinte
+```
+
+Esse formato é a base de todo o sistema. A EG desenha a receita, testa, valida com o cliente e coloca no cofre. A partir daí, o agente executa sozinho sempre que o gatilho acontecer.
 
 ---
 
