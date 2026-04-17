@@ -136,6 +136,32 @@ class ObsidianClient:
             "existe": True,
         }
 
+    async def consultar_tasks(self, projeto: str) -> str:
+        """
+        Lê o arquivo de tasks do projeto e retorna as pendentes formatadas para WhatsApp.
+        Retorna mensagem de 'nenhuma task' se o arquivo não existir ou estiver vazio.
+        """
+        data = datetime.now().strftime("%Y-%m-%d")
+        caminho = self._caminho_para_acao(AcaoTipo.CONSULTAR_TASKS, projeto, data)
+        conteudo = await self.ler_nota(caminho)
+
+        if not conteudo:
+            return f"📋 Nenhuma task encontrada para *{projeto}*."
+
+        pendentes = [l.strip() for l in conteudo.splitlines() if "- [ ]" in l]
+        concluidas = [l for l in conteudo.splitlines() if "- [x]" in l or "- [X]" in l]
+
+        if not pendentes:
+            return f"✅ Todas as tasks de *{projeto}* estão concluídas!"
+
+        linhas = [f"📋 *Tasks pendentes — {projeto}*", ""]
+        for i, t in enumerate(pendentes, 1):
+            texto = t.replace("- [ ]", "").strip()
+            linhas.append(f"{i}. {texto}")
+
+        linhas.append(f"\n_{len(pendentes)} pendente(s) · {len(concluidas)} concluída(s)_")
+        return "\n".join(linhas)
+
     async def health_check(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:

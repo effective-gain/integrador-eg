@@ -7,6 +7,8 @@ from fastapi.security.api_key import APIKeyHeader
 
 from src.classifier import Classifier
 from src.config import settings
+from src.contexto import ContextoConversa, ContextoPendente
+from src.dead_letter import DeadLetterQueue
 from src.email_reader import EmailReader
 from src.models import AcaoTipo, DiarioEntrada, ACAO_EMOJI
 from src.obsidian import ObsidianClient, ObsidianError
@@ -23,6 +25,8 @@ obsidian: ObsidianClient
 whatsapp: WhatsAppClient
 transcriber: Transcriber | None = None
 briefing_scheduler: BriefingScheduler | None = None
+contexto_conversa: ContextoConversa = ContextoConversa()
+dead_letter: DeadLetterQueue = DeadLetterQueue()
 
 
 @asynccontextmanager
@@ -62,6 +66,10 @@ async def lifespan(app: FastAPI):
         briefing_scheduler.iniciar()
         logger.info("Briefing agendado para %s → %s", settings.briefing_hora, settings.briefing_numero_destino)
 
+    pendentes = dead_letter.total_pendentes()
+    if pendentes:
+        logger.warning("Dead letter queue: %d operações pendentes ao iniciar", pendentes)
+
     logger.info("Integrador EG iniciado ✅")
     yield
 
@@ -81,6 +89,7 @@ async def health():
         "obsidian": "ok" if obsidian_ok else "offline",
         "whisper": "ativo" if transcriber else "inativo",
         "briefing": f"agendado {settings.briefing_hora}" if briefing_scheduler else "inativo",
+        "dead_letter_pendentes": dead_letter.total_pendentes(),
         "environment": settings.environment,
     }
 
@@ -126,6 +135,17 @@ async def webhook_whatsapp(request: Request):
             await _registrar_diario(mensagem, AcaoTipo.AMBIGUA, "desconhecido", "erro", str(e))
             return JSONResponse({"status": "transcricao_falhou"})
 
+    # --- contexto de conversa: resposta a esclarecimento pendente ---
+    ctx = contexto_conversa.recuperar(mensagem.grupo_id, mensagem.remetente)
+    if ctx:
+        mensagem.conteudo = (
+            f"Contexto anterior: {ctx.conteudo_original}\n"
+            f"Pergunta feita: {ctx.pergunta}\n"
+            f"Resposta do usuário: {mensagem.conteudo}"
+        )
+        contexto_conversa.limpar(mensagem.grupo_id, mensagem.remetente)
+        logger.info("Contexto de esclarecimento recuperado para %s", mensagem.remetente)
+
     # --- classificação ---
     try:
         resultado = classifier.classificar(mensagem)
@@ -134,11 +154,33 @@ async def webhook_whatsapp(request: Request):
         await _responder(mensagem.grupo_id, "⚠️ Erro interno ao processar a mensagem. O time EG foi notificado.")
         raise HTTPException(status_code=500, detail=str(e))
 
-    # --- se ambígua: pede esclarecimento e encerra ---
+    # --- se ambígua: salva contexto, pede esclarecimento e encerra ---
     if resultado.requer_esclarecimento:
-        await _responder(mensagem.grupo_id, resultado.pergunta_esclarecimento or "Pode detalhar melhor?")
+        pergunta = resultado.pergunta_esclarecimento or "Pode detalhar melhor?"
+        contexto_conversa.salvar(
+            mensagem.grupo_id,
+            mensagem.remetente,
+            ContextoPendente(
+                pergunta=pergunta,
+                conteudo_original=mensagem.conteudo,
+                projeto=resultado.projeto,
+            ),
+        )
+        await _responder(mensagem.grupo_id, pergunta)
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "ambigua")
         return JSONResponse({"status": "esclarecimento_solicitado"})
+
+    # --- consultar_tasks: lê Obsidian e responde sem escrever ---
+    if resultado.acao == AcaoTipo.CONSULTAR_TASKS:
+        try:
+            resposta_tasks = await obsidian.consultar_tasks(resultado.projeto)
+        except ObsidianError as e:
+            logger.error("Erro ao consultar tasks: %s", e)
+            await _responder(mensagem.grupo_id, "⚠️ Não consegui acessar o Obsidian agora.")
+            return JSONResponse({"status": "obsidian_offline"})
+        await _responder(mensagem.grupo_id, resposta_tasks)
+        await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
+        return JSONResponse({"status": "ok", "acao": resultado.acao, "projeto": resultado.projeto})
 
     # --- registra no Obsidian ---
     try:
@@ -150,7 +192,18 @@ async def webhook_whatsapp(request: Request):
         logger.info("Registrado em Obsidian: %s", caminho)
     except ObsidianError as e:
         logger.error("Erro no Obsidian: %s", e)
-        await _responder(mensagem.grupo_id, "⚠️ Não consegui salvar no Obsidian. Tentando novamente em breve.")
+        dead_letter.enfileirar(
+            grupo_id=mensagem.grupo_id,
+            grupo_nome=mensagem.grupo_nome,
+            acao=resultado.acao,
+            projeto=resultado.projeto,
+            conteudo_formatado=resultado.conteudo_formatado,
+            erro=str(e),
+        )
+        await _responder(
+            mensagem.grupo_id,
+            "⚠️ Obsidian temporariamente indisponível. Sua mensagem foi salva e será registrada assim que voltar.",
+        )
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "erro", str(e))
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -162,6 +215,39 @@ async def webhook_whatsapp(request: Request):
     await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
 
     return JSONResponse({"status": "ok", "acao": resultado.acao, "projeto": resultado.projeto})
+
+
+@app.post("/retry", dependencies=[Depends(_verificar_api_key)])
+async def retry_dead_letter():
+    """Reprocessa operações da dead letter queue. Chamável manualmente ou pelo briefing."""
+    pendentes = dead_letter.listar_pendentes()
+    if not pendentes:
+        return JSONResponse({"status": "ok", "processados": 0, "mensagem": "Fila vazia."})
+
+    sucesso = 0
+    falhou = 0
+
+    for item in pendentes:
+        try:
+            await obsidian.registrar_acao(
+                acao=AcaoTipo(item["acao"]),
+                projeto=item["projeto"],
+                conteudo=item["conteudo_formatado"],
+            )
+            dead_letter.remover(item["id"])
+            sucesso += 1
+            logger.info("Dead letter: reprocessado id=%d | %s", item["id"], item["acao"])
+        except ObsidianError as e:
+            dead_letter.incrementar_tentativas(item["id"], str(e))
+            falhou += 1
+            logger.warning("Dead letter: falhou novamente id=%d: %s", item["id"], e)
+
+    return JSONResponse({
+        "status": "ok",
+        "processados": sucesso,
+        "falhou": falhou,
+        "restantes": dead_letter.total_pendentes(),
+    })
 
 
 async def _responder(grupo_id: str, texto: str) -> None:

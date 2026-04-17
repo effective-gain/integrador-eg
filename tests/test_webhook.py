@@ -266,3 +266,149 @@ def test_webhook_audio_falha_transcricao_avisa_grupo():
     assert resp.json()["status"] == "transcricao_falhou"
     texto = mock_wa.enviar_mensagem.call_args[0][1]
     assert "texto" in texto.lower() or "áudio" in texto.lower()
+
+
+# ── Testes: consultar_tasks ───────────────────────────────────────────────────
+
+def _resultado_consultar_tasks():
+    return ClassificacaoResult(
+        acao=AcaoTipo.CONSULTAR_TASKS,
+        projeto="K2Con",
+        conteudo_formatado="",
+        prioridade=Prioridade.MEDIA,
+        resumo_confirmacao="Tasks consultadas",
+    )
+
+
+def test_webhook_consultar_tasks_responde_sem_escrever():
+    import api.webhook as wh
+    client, mock_wa, mock_clf = _montar_app_mockado(classificar_retorno=_resultado_consultar_tasks())
+    wh.obsidian.consultar_tasks = AsyncMock(return_value="📋 *Tasks pendentes — K2Con*\n\n1. revisar proposta")
+
+    resp = client.post("/webhook/whatsapp", json=_payload_texto())
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    assert resp.json()["acao"] == AcaoTipo.CONSULTAR_TASKS.value
+    # deve ter respondido com as tasks
+    texto_enviado = mock_wa.enviar_mensagem.call_args[0][1]
+    assert "Tasks" in texto_enviado or "K2Con" in texto_enviado
+    # NÃO deve ter chamado registrar_acao (só leitura)
+    wh.obsidian.registrar_acao.assert_not_called()
+
+
+def test_webhook_consultar_tasks_obsidian_offline():
+    import api.webhook as wh
+    from src.obsidian import ObsidianError
+    client, mock_wa, mock_clf = _montar_app_mockado(classificar_retorno=_resultado_consultar_tasks())
+    wh.obsidian.consultar_tasks = AsyncMock(side_effect=ObsidianError("offline"))
+
+    resp = client.post("/webhook/whatsapp", json=_payload_texto())
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "obsidian_offline"
+    mock_wa.enviar_mensagem.assert_called_once()
+
+
+# ── Testes: contexto de conversa ─────────────────────────────────────────────
+
+def test_webhook_ambigua_salva_contexto_e_responde():
+    import api.webhook as wh
+    from src.contexto import ContextoConversa
+    wh.contexto_conversa = ContextoConversa()  # estado limpo
+
+    client, mock_wa, _ = _montar_app_mockado(classificar_retorno=_resultado_ambigua())
+    resp = client.post("/webhook/whatsapp", json=_payload_texto())
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "esclarecimento_solicitado"
+    # contexto deve ter sido salvo
+    assert wh.contexto_conversa.total() == 1
+
+
+def test_webhook_resposta_esclarecimento_usa_contexto():
+    import api.webhook as wh
+    from src.contexto import ContextoConversa, ContextoPendente
+
+    wh.contexto_conversa = ContextoConversa()
+    # pré-carregar um contexto pendente para o remetente do payload
+    wh.contexto_conversa.salvar(
+        "120363000000@g.us",
+        "Luiz",
+        ContextoPendente(
+            pergunta="Qual a data da reunião?",
+            conteudo_original="reunião com cliente",
+            projeto="K2Con",
+        ),
+    )
+
+    client, mock_wa, mock_clf = _montar_app_mockado()
+    resp = client.post("/webhook/whatsapp", json=_payload_texto(conteudo="sexta às 14h"))
+
+    assert resp.status_code == 200
+    # classificador deve ter recebido o conteúdo enriquecido com o contexto
+    msg_classificada = mock_clf.classificar.call_args[0][0]
+    assert "reunião com cliente" in msg_classificada.conteudo
+    assert "sexta às 14h" in msg_classificada.conteudo
+    # contexto deve ter sido limpo após uso
+    assert wh.contexto_conversa.total() == 0
+
+
+# ── Testes: dead letter ───────────────────────────────────────────────────────
+
+def test_webhook_obsidian_offline_enfileira_dead_letter():
+    import api.webhook as wh
+    from src.dead_letter import DeadLetterQueue
+    import tempfile, pathlib
+
+    tmp = pathlib.Path(tempfile.mkdtemp()) / "dl.db"
+    wh.dead_letter = DeadLetterQueue(db_path=tmp)
+
+    client, mock_wa, _ = _montar_app_mockado(obsidian_ok=False)
+    resp = client.post("/webhook/whatsapp", json=_payload_texto())
+
+    assert resp.status_code == 503
+    assert wh.dead_letter.total_pendentes() == 1
+    # avisa usuário com mensagem diferente do simples "offline"
+    texto = mock_wa.enviar_mensagem.call_args[0][1]
+    assert "salva" in texto.lower() or "registrada" in texto.lower()
+
+
+def test_retry_endpoint_reprocessa_fila():
+    import api.webhook as wh
+    from src.dead_letter import DeadLetterQueue
+    import tempfile, pathlib
+
+    tmp = pathlib.Path(tempfile.mkdtemp()) / "dl.db"
+    wh.dead_letter = DeadLetterQueue(db_path=tmp)
+    wh.dead_letter.enfileirar("g1", "Grupo", "criar_nota", "K2Con", "## Nota", "timeout anterior")
+
+    client, _, _ = _montar_app_mockado()
+    wh.obsidian.registrar_acao = AsyncMock(return_value="04 - Inbox/nota.md")
+
+    resp = client.post("/retry")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["processados"] == 1
+    assert data["restantes"] == 0
+
+
+def test_health_inclui_dead_letter_pendentes():
+    import api.webhook as wh
+    from src.dead_letter import DeadLetterQueue
+    import tempfile, pathlib
+
+    tmp = pathlib.Path(tempfile.mkdtemp()) / "dl.db"
+    wh.dead_letter = DeadLetterQueue(db_path=tmp)
+    wh.dead_letter.enfileirar("g1", "G", "criar_nota", "P", "c", "e")
+
+    wh.obsidian = MagicMock()
+    wh.obsidian.health_check = AsyncMock(return_value=True)
+    wh.transcriber = None
+    wh.briefing_scheduler = None
+
+    client = TestClient(wh.app, raise_server_exceptions=False)
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["dead_letter_pendentes"] == 1
