@@ -656,6 +656,58 @@ Se você está lendo isso depois que o projeto já cresceu: o histórico de comm
 
 ---
 
+## Modelo de mercado: dois produtos, uma infraestrutura
+
+O Integrador EG sustenta dois produtos distintos que compartilham a mesma base técnica:
+
+---
+
+### Produto 1 — Premium (alto ticket, personalizado)
+
+Cliente com operação estabelecida que precisa de automações customizadas. Cofre exclusivo no Obsidian, prompt desenvolvido pela EG, receitas desenhadas caso a caso, cloud phone dedicado por rede social. Modelo: setup inicial + mensalidade.
+
+---
+
+### Produto 2 — Subcontratados nos EUA (low ticket, alto volume)
+
+**O mercado:**
+Subcontratados imigrantes nos EUA — brasileiros, hispânicos, europeus — que trabalham em construção civil, serviços gerais, elétrica, hidráulica, paisagismo e afins. É um mercado com altíssimo índice de contratação, baixa adoção de tecnologia e uma dor administrativa real e recorrente: eles operam em inglês nos sistemas americanos, mas pensam e se comunicam em português ou espanhol.
+
+**A dor específica:**
+- Recebem e emitem invoices em inglês, mas não dominam o idioma
+- Usam QuickBooks ou sistemas similares sem entender bem o fluxo
+- Precisam de alguém para fazer a ponte entre o que aconteceu no campo e o que precisa ser registrado no sistema
+- Não têm contador no dia a dia — resolvem no WhatsApp com quem aparecer
+- Volume alto de tarefas repetitivas de baixo valor intelectual mas alto custo se errado (lançamentos, notas, pagamentos)
+
+**O produto:**
+Um assistente via WhatsApp, em português ou espanhol, que executa as tarefas administrativas recorrentes do subcontratado nos sistemas americanos. O cliente fala no idioma dele, o agente opera o sistema em inglês, e tudo fica registrado e organizado.
+
+**Receitas pré-construídas para o segmento:**
+
+| Tarefa | Frequência | O que o agente faz |
+|--------|-----------|-------------------|
+| Lançar invoice recebida | Diária | Faz login no QuickBooks, lança valor, fornecedor, data |
+| Emitir invoice para cliente | Sob demanda | Preenche e envia invoice pelo sistema |
+| Registrar pagamento recebido | Semanal | Marca invoice como paga no sistema |
+| Checar invoices em aberto | Sob demanda | Lê e responde no WhatsApp quais estão pendentes |
+| Arquivar documentos | Contínuo | Salva contratos, W-9, certificados no lugar certo |
+| Briefing semanal | Toda segunda | Resumo financeiro: recebido, a receber, pendências |
+
+**Diferencial competitivo:**
+O subcontratado não precisa aprender inglês, não precisa aprender QuickBooks, não precisa de contador para tarefas operacionais do dia a dia. Ele manda áudio ou foto no WhatsApp e está feito. O agente faz a tradução — de idioma e de sistema.
+
+**Modelo de negócio:**
+- Preço acessível (low ticket) — voltado para volume, não para margem unitária
+- Onboarding padronizado — cofre pré-configurado para o segmento, não customizado por cliente
+- Escala por word of mouth dentro das comunidades — subcontratados indicam para outros subcontratados da mesma comunidade
+- Sem setup complexo — o produto já sabe o que esse cliente precisa antes de ele entrar
+
+**Por que este mercado agora:**
+O setor de construção nos EUA tem déficit estrutural de mão de obra e depende cada vez mais de subcontratados imigrantes. Esse mercado cresce, tem dinheiro circulando, e não tem nenhuma solução tecnológica desenhada especificamente para ele na camada administrativa. A barreira de idioma é o problema não resolvido — e o Integrador EG resolve isso nativamente.
+
+---
+
 ## Status atual
 
 > **Fase:** WhatsApp OS e Instagram Keeper ativos. Social Responder em design — abordagem via browser definida, desafios mapeados.
