@@ -531,30 +531,69 @@ Cada cliente tem:
 
 ---
 
-## Estrutura do repositório
+## Implementação atual — o que está construído e testado
+
+**104 testes passando.** Cada módulo abaixo tem cobertura de testes unitários e de integração (sem dependências externas reais — tudo mockado).
+
+### Módulos implementados (`src/`)
+
+| Módulo | Responsabilidade | Testes |
+|--------|-----------------|--------|
+| `models.py` | Todos os tipos Pydantic: MensagemEntrada, ClassificacaoResult, DiarioEntrada, EmailEntrada, BriefingData, etc. | 6 |
+| `classifier.py` | Claude Sonnet 4.6 classifica mensagem → JSON estruturado, fallback seguro para AMBIGUA | 9 |
+| `obsidian.py` | Leitura/escrita no vault via REST API, retry com backoff exponencial (3 tentativas), `verificar_diario_hoje()` | 13 |
+| `whatsapp.py` | Parsing de webhook Evolution API, envio de mensagem, download de áudio | 7 |
+| `transcriber.py` | OpenAI Whisper — áudio bytes → texto transcrito, fallback com mensagem clara | 6 |
+| `email_reader.py` | IMAP4_SSL para Gmail, detecta anexos, extrai código 2FA por regex | 12 |
+| `email_digest.py` | Claude Haiku classifica emails (invoice/task/2FA/informativo/spam), formata digest WA | 11 |
+| `briefing.py` | Consolida diário + tasks pendentes + emails → texto WhatsApp, urgentes primeiro | 13 |
+| `scheduler.py` | APScheduler asyncio, cron configurável, resiliente a falhas no job | 2 |
+| `receita.py` | Engine YAML→Playwright: click/fill/select/wait/check_text, delay humano, screenshot final | 16 |
+| `config.py` | pydantic-settings lendo .env, todos os serviços configuráveis | — |
+
+### API (`api/webhook.py`)
+
+FastAPI com lifespan completo:
+- `GET /health` — status de todos os componentes (Obsidian, Whisper, briefing scheduler)
+- `POST /webhook/whatsapp` — fluxo completo: parsing → transcrição (se áudio) → classificação → Obsidian → confirmação WA → diário
+
+Fluxo de erro: cada falha é tratada individualmente — nunca perde o registro no diário, sempre avisa o grupo.
+
+### Receitas (`receitas/`)
+
+| Receita | Sistema | Variáveis | Passos |
+|---------|---------|-----------|--------|
+| `lancamento_quickbooks.yaml` | QuickBooks Online | qb_email, qb_senha, fornecedor, valor, descricao, data, categoria | 17 |
+
+### Estrutura do repositório
 
 ```
 integrador-eg/
-├── workflows/
-│   ├── WA_RECEPTOR.json
-│   ├── WA_WHISPER.json
-│   ├── WA_CLASSIFIER.json
-│   ├── WA_EXECUTOR.json
-│   ├── WA_RESPONDER.json
-│   └── INSTA_KEEPER.json
-├── scripts/
-│   ├── instagram_keeper.py
-│   ├── test_obsidian.py
-│   ├── test_classifier.py
-│   └── test_flow.py
+├── api/
+│   └── webhook.py          ← FastAPI: /health + /webhook/whatsapp
+├── src/
+│   ├── models.py            ← todos os tipos Pydantic
+│   ├── classifier.py        ← Claude Sonnet 4.6
+│   ├── obsidian.py          ← REST API + retry + diário
+│   ├── whatsapp.py          ← Evolution API (recv + send)
+│   ├── transcriber.py       ← OpenAI Whisper
+│   ├── email_reader.py      ← IMAP4_SSL Gmail
+│   ├── email_digest.py      ← Claude Haiku + formatação WA
+│   ├── briefing.py          ← consolidador + formatação matinal
+│   ├── scheduler.py         ← APScheduler asyncio
+│   ├── receita.py           ← engine YAML→Playwright
+│   └── config.py            ← pydantic-settings
+├── receitas/
+│   └── lancamento_quickbooks.yaml
 ├── prompts/
 │   ├── classifier.md
 │   └── responder.md
-├── connectors/         ← um conector por serviço externo
-├── routes/             ← endpoints FastAPI
-├── schemas/            ← Pydantic models
-├── tests/              ← testes por conector
-└── docs/               ← decisões técnicas e contratos de API
+├── scripts/
+│   └── test_flow.py         ← teste de integração manual
+├── tests/                   ← 104 testes, todos passando
+├── conftest.py              ← env vars para testes
+├── requirements.txt
+└── .env.example
 ```
 
 ---
@@ -963,4 +1002,4 @@ Próximos passos:
 
 ---
 
-*Última atualização: 2026-04-17 — Produto estruturado: grupos WhatsApp por projeto, confirmação prévia, Obsidian 24/7. Social Responder adicionado: resposta em redes sociais via browser sem API oficial.*
+*Última atualização: 2026-04-17 — Implementação completa dos Passos 1-5: webhook FastAPI, classificador Claude, Obsidian com retry, Whisper para áudio, digest de e-mail, briefing matinal às 8h, engine de receitas Playwright. 104 testes passando.*
