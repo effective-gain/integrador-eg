@@ -172,6 +172,49 @@ def test_webhook_obsidian_offline_retorna_503():
     assert "Obsidian" in texto
 
 
+def test_webhook_rejeita_secret_invalido():
+    import api.webhook as wh
+    from src.config import settings
+    original = settings.webhook_secret
+    settings.webhook_secret = "secret-correto"
+
+    client = TestClient(wh.app, raise_server_exceptions=False)
+    resp = client.post(
+        "/webhook/whatsapp",
+        json=_payload_texto(),
+        headers={"x-webhook-secret": "secret-errado"},
+    )
+    assert resp.status_code == 401
+
+    settings.webhook_secret = original
+
+
+def test_webhook_aceita_secret_correto():
+    client, mock_wa, _ = _montar_app_mockado()
+    import api.webhook as wh
+    from src.config import settings
+    original = settings.webhook_secret
+    settings.webhook_secret = "secret-correto"
+
+    resp = client.post(
+        "/webhook/whatsapp",
+        json=_payload_texto(),
+        headers={"x-webhook-secret": "secret-correto"},
+    )
+    assert resp.status_code == 200
+    settings.webhook_secret = original
+
+
+def test_webhook_sem_secret_configurado_aceita_tudo():
+    client, _, _ = _montar_app_mockado()
+    import api.webhook as wh
+    from src.config import settings
+    settings.webhook_secret = ""  # sem secret = dev mode
+
+    resp = client.post("/webhook/whatsapp", json=_payload_texto())
+    assert resp.status_code == 200
+
+
 def test_webhook_health_check():
     import api.webhook as wh
     wh.obsidian = MagicMock()

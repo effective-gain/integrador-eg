@@ -28,7 +28,7 @@ WhatsApp grupo (áudio/texto)
 | obsidian_bridge.py | `C:\Users\user\Obsidian\` | Ativo |
 
 ## Obsidian — Acesso direto
-**API key:** `de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd`
+**API key:** definida em `.env` como `OBSIDIAN_API_KEY` (nunca commitar)
 **Base URL:** `https://127.0.0.1:27124`
 **Vault:** `C:\Users\user\Documents\Effective Gain`
 **Bridge:** `cd C:\Users\user\Obsidian && python obsidian_bridge.py [comando]`

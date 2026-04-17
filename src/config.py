@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     briefing_numero_destino: str = ""
     briefing_hora: str = "08:00"
 
+    webhook_secret: str = ""  # header x-webhook-secret da Evolution API
+
     log_level: str = "INFO"
     environment: str = "development"
 

@@ -22,7 +22,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "Bearer de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd" },
+            { "name": "Authorization", "value": "Bearer ={{ $env.OBSIDIAN_API_KEY }}" },
             { "name": "Content-Type", "value": "text/markdown" }
           ]
         },

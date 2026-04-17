@@ -16,8 +16,8 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "classifier.md"
-MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 1024
+MODEL = "claude-haiku-4-5-20251001"
+MAX_TOKENS = 512
 
 
 def _projeto_do_grupo(grupo_nome: str) -> str:
