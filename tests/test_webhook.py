@@ -172,7 +172,7 @@ def test_webhook_obsidian_offline_retorna_503():
     assert "Obsidian" in texto
 
 
-def test_webhook_rejeita_secret_invalido():
+def test_webhook_rejeita_api_key_invalida():
     import api.webhook as wh
     from src.config import settings
     original = settings.webhook_secret
@@ -182,14 +182,14 @@ def test_webhook_rejeita_secret_invalido():
     resp = client.post(
         "/webhook/whatsapp",
         json=_payload_texto(),
-        headers={"x-webhook-secret": "secret-errado"},
+        headers={"x-api-key": "chave-errada"},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
     settings.webhook_secret = original
 
 
-def test_webhook_aceita_secret_correto():
+def test_webhook_aceita_api_key_correta():
     client, mock_wa, _ = _montar_app_mockado()
     import api.webhook as wh
     from src.config import settings
@@ -199,7 +199,7 @@ def test_webhook_aceita_secret_correto():
     resp = client.post(
         "/webhook/whatsapp",
         json=_payload_texto(),
-        headers={"x-webhook-secret": "secret-correto"},
+        headers={"x-api-key": "secret-correto"},
     )
     assert resp.status_code == 200
     settings.webhook_secret = original
@@ -207,9 +207,8 @@ def test_webhook_aceita_secret_correto():
 
 def test_webhook_sem_secret_configurado_aceita_tudo():
     client, _, _ = _montar_app_mockado()
-    import api.webhook as wh
     from src.config import settings
-    settings.webhook_secret = ""  # sem secret = dev mode
+    settings.webhook_secret = ""  # dev mode: sem secret aceita tudo
 
     resp = client.post("/webhook/whatsapp", json=_payload_texto())
     assert resp.status_code == 200

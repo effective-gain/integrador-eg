@@ -1,9 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse
-from fastapi.security import APIKeyHeader
+from fastapi.security.api_key import APIKeyHeader
 
 from src.classifier import Classifier
 from src.config import settings
@@ -85,18 +85,19 @@ async def health():
     }
 
 
-def _verificar_webhook_secret(request: Request) -> None:
-    """Rejeita requisições sem o header correto quando WEBHOOK_SECRET está configurado."""
+_api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+
+
+async def _verificar_api_key(api_key: str | None = Security(_api_key_header)) -> None:
+    """Rejeita requisições sem x-api-key válida quando WEBHOOK_SECRET está configurado."""
     if not settings.webhook_secret:
-        return  # sem secret configurado: aceita tudo (dev/teste)
-    recebido = request.headers.get("x-webhook-secret", "")
-    if recebido != settings.webhook_secret:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook secret inválido")
+        return  # dev mode: sem secret configurado aceita tudo
+    if api_key != settings.webhook_secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
 
 
-@app.post("/webhook/whatsapp")
+@app.post("/webhook/whatsapp", dependencies=[Depends(_verificar_api_key)])
 async def webhook_whatsapp(request: Request):
-    _verificar_webhook_secret(request)
     payload = await request.json()
     mensagem = WhatsAppClient.parsear_webhook(payload)
 

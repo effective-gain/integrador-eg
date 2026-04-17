@@ -125,6 +125,29 @@ async def test_caminho_acao_sem_caracteres_invalidos():
     assert " " not in caminho.split("/")[-1]
 
 
+def test_caminho_acao_previne_path_traversal():
+    """Nomes de projeto maliciosos não devem escapar do vault."""
+    client = make_client()
+    payloads_maliciosos = [
+        "../../../etc/passwd",
+        "..\\..\\Windows\\System32",
+        "projeto/../../secreto",
+        "<script>alert(1)</script>",
+        "K2Con; rm -rf /",
+    ]
+    for payload in payloads_maliciosos:
+        caminho = client._caminho_para_acao(AcaoTipo.CRIAR_NOTA, payload, "2026-04-17")
+        assert ".." not in caminho, f"Path traversal detectado para: {payload}"
+        assert "/" not in caminho.split("/")[-1], f"Barra no nome do arquivo: {payload}"
+
+
+def test_caminho_acao_projeto_vazio_usa_fallback():
+    """Projeto vazio após sanitização não deve gerar caminho inválido."""
+    client = make_client()
+    caminho = client._caminho_para_acao(AcaoTipo.CRIAR_NOTA, "../../../", "2026-04-17")
+    assert "Inbox" in caminho  # fallback aplicado
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_health_check_ok():

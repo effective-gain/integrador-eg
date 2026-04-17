@@ -1,42 +1,57 @@
 """
 test_obsidian.py — Testa conexão com Obsidian REST API
-Roda antes de configurar o n8n para garantir que o vault está acessível.
+Lê credenciais do .env — nunca hardcoded.
+
+Uso:
+  python scripts/test_obsidian.py
+
+Requer:
+  - .env com OBSIDIAN_API_KEY e OBSIDIAN_API_URL
+  - Obsidian aberto com plugin REST API ativo
 """
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from dotenv import load_dotenv
+load_dotenv()
 
 import requests
-import json
-import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+API_KEY = os.environ.get("OBSIDIAN_API_KEY", "")
+BASE_URL = os.environ.get("OBSIDIAN_API_URL", "http://localhost:27124")
+# Para HTTPS com cert auto-assinado: defina OBSIDIAN_CERT=/caminho/obsidian.pem no .env
+CERT = os.environ.get("OBSIDIAN_CERT", False)
 
-API_KEY = "de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd"
-BASE_URL = "https://127.0.0.1:27124"
+if not API_KEY:
+    print("❌ OBSIDIAN_API_KEY não configurada no .env")
+    sys.exit(1)
+
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
 }
+
 
 def test_status():
     print("1. Testando status da API...")
-    r = requests.get(f"{BASE_URL}/", verify=False)
+    r = requests.get(f"{BASE_URL}/", verify=CERT)
     data = r.json()
     print(f"   Status: {data.get('status')}")
     print(f"   Versão: {data.get('versions', {}).get('self')}")
     return data.get("status") == "OK"
 
+
 def test_read_home():
     print("2. Lendo HOME.md...")
-    r = requests.get(
-        f"{BASE_URL}/vault/HOME.md",
-        headers=HEADERS,
-        verify=False
-    )
+    r = requests.get(f"{BASE_URL}/vault/HOME.md", headers=HEADERS, verify=CERT)
     if r.status_code == 200:
-        print(f"   HOME.md lido com sucesso ({len(r.text)} chars)")
+        print(f"   HOME.md lido ({len(r.text)} chars)")
         return True
-    else:
-        print(f"   Erro: {r.status_code}")
-        return False
+    print(f"   Erro: {r.status_code}")
+    return False
+
 
 def test_create_note():
     print("3. Criando nota de teste...")
@@ -45,48 +60,34 @@ def test_create_note():
         f"{BASE_URL}/vault/04%20-%20Inbox/teste-whatsapp-os.md",
         headers={**HEADERS, "Content-Type": "text/markdown"},
         data=payload.encode("utf-8"),
-        verify=False
+        verify=CERT,
     )
     if r.status_code in [200, 204]:
-        print("   Nota criada com sucesso em 04 - Inbox/")
+        print("   Nota criada em 04 - Inbox/")
         return True
-    else:
-        print(f"   Erro: {r.status_code} — {r.text}")
-        return False
+    print(f"   Erro: {r.status_code} — {r.text}")
+    return False
+
 
 def test_list_projects():
     print("4. Listando projetos ativos...")
-    r = requests.get(
-        f"{BASE_URL}/vault/01%20-%20Projetos/",
-        headers=HEADERS,
-        verify=False
-    )
+    r = requests.get(f"{BASE_URL}/vault/01%20-%20Projetos/", headers=HEADERS, verify=CERT)
     if r.status_code == 200:
         files = r.json().get("files", [])
         print(f"   {len(files)} arquivos em 01 - Projetos/")
         for f in files[:5]:
             print(f"   - {f}")
         return True
-    else:
-        print(f"   Erro: {r.status_code}")
-        return False
+    print(f"   Erro: {r.status_code}")
+    return False
+
 
 if __name__ == "__main__":
     print("=" * 50)
     print("WhatsApp OS — Teste Obsidian REST API")
     print("=" * 50)
-
-    results = [
-        test_status(),
-        test_read_home(),
-        test_create_note(),
-        test_list_projects()
-    ]
-
+    results = [test_status(), test_read_home(), test_create_note(), test_list_projects()]
     passed = sum(results)
     print("=" * 50)
     print(f"Resultado: {passed}/{len(results)} testes passaram")
-    if passed == len(results):
-        print("✅ Obsidian REST API pronta para integração com n8n")
-    else:
-        print("❌ Corrija os erros antes de configurar o n8n")
+    print("✅ Pronta para integração" if passed == len(results) else "❌ Corrija os erros antes de configurar o n8n")
