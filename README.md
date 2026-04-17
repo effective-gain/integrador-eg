@@ -699,9 +699,35 @@ O subcontratado não precisa aprender inglês, não precisa aprender QuickBooks,
 
 **Modelo de negócio:**
 - Preço acessível (low ticket) — voltado para volume, não para margem unitária
-- Onboarding padronizado — cofre pré-configurado para o segmento, não customizado por cliente
-- Escala por word of mouth dentro das comunidades — subcontratados indicam para outros subcontratados da mesma comunidade
+- **Onboarding 100% self-service** — cliente se cadastra sozinho, sem intervenção da EG. Isso é o que garante escala real: centenas de clientes sem crescer a equipe operacional
+- Cofre pré-configurado para o segmento — a EG constrói uma vez, cada cliente novo recebe a mesma base com seus dados específicos preenchidos automaticamente no cadastro
+- Escala por word of mouth dentro das comunidades — subcontratados indicam para outros da mesma comunidade
 - Sem setup complexo — o produto já sabe o que esse cliente precisa antes de ele entrar
+
+**Fluxo de onboarding self-service:**
+```
+Cliente acessa landing page
+        ↓
+Preenche cadastro: nome, idioma, sistema financeiro (QuickBooks etc.)
+        ↓
+Conecta número WhatsApp (via QR code — Evolution API)
+        ↓
+Sistema provisiona automaticamente:
+  → Cofre do cliente no Obsidian (baseado no template do segmento)
+  → Grupo WhatsApp dedicado criado
+  → Receitas pré-construídas ativadas
+  → Briefing configurado no horário padrão
+        ↓
+Cliente recebe mensagem de boas-vindas no WhatsApp
+e já pode usar na hora
+```
+
+**O que a EG constrói uma vez e replica infinitamente:**
+- Template de cofre para subcontratados (DNA do segmento)
+- Receitas padrão do segmento (invoice, QuickBooks, documentos)
+- Prompt base do agente em PT, ES e EN
+- Flow de onboarding automatizado
+- Sistema de billing (assinatura mensal)
 
 **Por que este mercado agora:**
 O setor de construção nos EUA tem déficit estrutural de mão de obra e depende cada vez mais de subcontratados imigrantes. Esse mercado cresce, tem dinheiro circulando, e não tem nenhuma solução tecnológica desenhada especificamente para ele na camada administrativa. A barreira de idioma é o problema não resolvido — e o Integrador EG resolve isso nativamente.
