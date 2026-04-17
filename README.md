@@ -189,11 +189,26 @@ Ações que afetam sistemas externos são irreversíveis ou difíceis de desfaze
 
 O Obsidian já está instalado e com workflows desenhados nesta máquina. Usá-lo como camada de design e documentação aproveita o que já existe. O diário de execuções resolve o problema de rastreabilidade sem precisar de um banco externo — pelo menos na fase inicial.
 
-### Decisão 7 — Redes sociais sem API oficial
+### Decisão 7 — Redes sociais: API oficial onde existe, cloud phone onde não existe
 
-As APIs oficiais de redes sociais (Instagram, Facebook, TikTok) são restritivas: exigem aprovação de app, têm rate limits baixos e podem ser revogadas por mudança de política a qualquer momento.
+A abordagem mudou após análise do mercado. Não é "sem API" vs "com API" — é usar cada camada no nível certo de risco:
 
-A alternativa é automação de browser com Playwright: o agente abre o navegador com um perfil com sessão ativa e age como um humano faria. O custo é maior em complexidade (manutenção de sessão, cuidados com detecção), mas a liberdade é total — sem dependência de aprovação de plataforma. O Instagram Keeper já prova que esse padrão funciona.
+**Camada 1 — API oficial (seguro, prioritário)**
+Meta (Instagram + Facebook) oferece Graph API para DMs com limite de 200 mensagens/hora. Para a maioria dos clientes, isso é suficiente. É seguro, legal e sem risco de ban. TikTok e LinkedIn têm APIs mais restritas mas existem.
+
+**Camada 2 — Cloud phone Android (robusto, para o que API não cobre)**
+A intuição de "app no celular do cliente" é tecnicamente correta — a solução de produção é o **cloud phone**: um Android virtual rodando em servidor 24/7 com a sessão do cliente ativa. Cada cliente tem seu próprio Android isolado na nuvem. O agente usa UIAutomator2 (automação de acessibilidade Android) para ler notificações e responder como um humano faria no celular — sem passar pelo browser, sem ser detectado como bot. Ferramentas de referência: GeeLark, cloud phone farms.
+
+Essa abordagem é superior ao browser automation para redes sociais porque: a sessão é mobile (mais difícil de detectar), o dispositivo é isolado por cliente, e o comportamento imita o uso real de um smartphone.
+
+**Camada 3 — Browser automation (fallback, para plataformas sem alternativa)**
+Playwright com perfil Chrome, usado quando nem API nem cloud phone resolvem. Mais frágil — detectado mais facilmente e requer manutenção de UI frequente.
+
+**Rate limits respeitados para segurança:**
+- Máximo 50-100 ações/dia por conta
+- Delays variáveis entre ações (15-60 minutos)
+- Sem atividade entre 22h-6h (padrão humano)
+- Monitoramento de action blocks com pausa automática e alerta imediato
 
 ---
 
@@ -485,13 +500,19 @@ Cada cliente tem:
 
 ### Redes sociais previstas
 
-| Rede | Prioridade | Tipo de interação |
-|------|-----------|-------------------|
-| Instagram | Alta | DMs + comentários |
-| Facebook | Alta | Comentários + Messenger |
-| TikTok | Média | Comentários |
-| LinkedIn | Média | Mensagens |
-| Outras | Conforme cliente | A definir |
+| Rede | Prioridade | Camada técnica | Tipo de interação |
+|------|-----------|----------------|-------------------|
+| Instagram | Alta | Graph API (DMs) + cloud phone (comentários) | DMs + comentários |
+| Facebook | Alta | Graph API (DMs) + cloud phone (comentários) | Comentários + Messenger |
+| TikTok | Média | Cloud phone Android | Comentários |
+| LinkedIn | Média | API parcial + cloud phone | Mensagens |
+| Outras | Conforme cliente | A definir caso a caso | A definir |
+
+**Infraestrutura por cliente de redes sociais:**
+- 1 cloud phone Android isolado por cliente
+- Sessão ativa 24/7 nas redes configuradas
+- IP residencial móvel dedicado (evita detecção)
+- Monitoramento de ban/action block com alerta automático ao time EG
 
 ---
 
