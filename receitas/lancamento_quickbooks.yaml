@@ -1,0 +1,123 @@
+# Receita: Lançamento de Invoice no QuickBooks Online
+# Gatilho: mensagem WhatsApp com anexo de invoice ou texto de lançamento financeiro
+# Saída: número da transação confirmada registrado no diário Obsidian
+#
+# Variáveis necessárias:
+#   qb_email        — e-mail de login do QuickBooks
+#   qb_senha        — senha (lida do bloco de notas seguro no Obsidian)
+#   fornecedor      — nome do fornecedor/vendor
+#   valor           — valor em USD (ex: "500.00")
+#   descricao       — descrição do lançamento
+#   data_lancamento — data no formato MM/DD/YYYY
+#   categoria       — categoria de despesa (ex: "Professional Services")
+
+id: lancamento_quickbooks
+nome: "Lançar Invoice no QuickBooks Online"
+descricao: >
+  Acessa o QuickBooks Online, navega para Expenses > Vendors,
+  cria um novo bill com os dados do invoice recebido.
+  Captura o número da transação como confirmação.
+
+url: "https://app.qbo.intuit.com/app/login"
+
+credenciais_chave:
+  - qb_email
+  - qb_senha
+  - fornecedor
+  - valor
+  - descricao
+  - data_lancamento
+  - categoria
+
+delay_humano_ms: 900
+
+passos:
+  - tipo: wait_selector
+    seletor: "input#Email"
+    descricao: "Aguardar campo de e-mail carregar"
+    timeout_ms: 15000
+
+  - tipo: fill
+    seletor: "input#Email"
+    valor: "{qb_email}"
+    descricao: "Preencher e-mail de login"
+
+  - tipo: click
+    seletor: "button#continue_or_signin"
+    descricao: "Clicar em Continuar"
+
+  - tipo: wait_selector
+    seletor: "input#Password"
+    descricao: "Aguardar campo de senha"
+    timeout_ms: 10000
+
+  - tipo: fill
+    seletor: "input#Password"
+    valor: "{qb_senha}"
+    descricao: "Preencher senha"
+
+  - tipo: click
+    seletor: "button#SignIn"
+    descricao: "Clicar em Sign In"
+
+  - tipo: wait
+    valor: "3000"
+    descricao: "Aguardar dashboard carregar"
+
+  - tipo: click
+    seletor: "[data-automation='ExpensesMenuButton'], a[href*='expense']"
+    descricao: "Navegar para Expenses"
+    timeout_ms: 15000
+
+  - tipo: click
+    seletor: "[data-automation='VendorsMenuButton'], a[href*='vendor']"
+    descricao: "Navegar para Vendors"
+    timeout_ms: 10000
+
+  - tipo: click
+    seletor: "button[data-automation='new-bill-button'], a[href*='bill/new']"
+    descricao: "Clicar em New Bill"
+    timeout_ms: 10000
+
+  - tipo: wait_selector
+    seletor: "input[name='vendorName'], [data-automation='VendorNameInput']"
+    descricao: "Aguardar formulário de bill"
+    timeout_ms: 10000
+
+  - tipo: fill
+    seletor: "input[name='vendorName'], [data-automation='VendorNameInput']"
+    valor: "{fornecedor}"
+    descricao: "Preencher nome do fornecedor"
+
+  - tipo: fill
+    seletor: "input[name='billDate'], [data-automation='BillDateInput']"
+    valor: "{data_lancamento}"
+    descricao: "Preencher data do lançamento"
+
+  - tipo: fill
+    seletor: "input[name='amount'], [data-automation='AmountInput']"
+    valor: "{valor}"
+    descricao: "Preencher valor"
+
+  - tipo: fill
+    seletor: "input[name='description'], [data-automation='DescriptionInput']"
+    valor: "{descricao}"
+    descricao: "Preencher descrição"
+
+  - tipo: select
+    seletor: "select[name='category'], [data-automation='CategorySelect']"
+    valor: "{categoria}"
+    descricao: "Selecionar categoria"
+    opcional: true
+
+  - tipo: click
+    seletor: "button[data-automation='save-bill'], button[type='submit'][class*='save']"
+    descricao: "Salvar o bill"
+    timeout_ms: 10000
+
+  - tipo: wait
+    valor: "2000"
+    descricao: "Aguardar confirmação de salvamento"
+
+saida_seletor: "[data-automation='transaction-number'], .transaction-confirmation-number"
+saida_descricao: "Número da transação confirmada pelo QuickBooks"
