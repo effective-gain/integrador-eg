@@ -722,26 +722,94 @@ Fase 3 — Braço 1 (produto do segmento)
 
 ---
 
-## Fase 1 — Validação interna da EG
+## Sequência real de construção
 
-Antes de vender o produto, a EG roda o produto. As automações abaixo são as primeiras a serem construídas e testadas dentro da própria operação da EG. Cada uma que funcionar vira receita validada — pronta para virar produto.
+A ordem abaixo é de dentro para fora — começa pela fundação e só avança quando a camada anterior está estável. Construir fora de ordem cria automações que funcionam mas que ninguém consegue debugar quando quebram.
 
-### Automações internas prioritárias
+```
+CAMADA 1 — Comunicação (já existe, precisa de uso real)
+CAMADA 2 — Memória (diário confiável)
+CAMADA 3 — Entrada externa (digest de e-mail)
+CAMADA 4 — Saída consolidada (briefing matinal)
+CAMADA 5 — Execução (primeira receita real)
+```
 
-**1. Briefing matinal da EG (toda manhã às 8h)**
-O que chega no WhatsApp da EG toda manhã:
-- E-mails recebidos no dia anterior que precisam de ação
+---
+
+### Passo 1 — Solidificar o WhatsApp OS → Obsidian
+
+**Por que primeiro:** É a fundação de tudo. Toda automação entra pelo WhatsApp e todo registro vai para o Obsidian. Se esse canal não for confiável, nada mais funciona.
+
+**O que fazer:**
+- Usar o módulo já existente na operação real da EG todos os dias
+- Observar onde a classificação do Claude erra
+- Corrigir os prompts até a interpretação ser precisa o suficiente
+- Garantir que toda mensagem processada gera um registro no Obsidian sem falha
+
+**Critério para avançar:** 7 dias consecutivos sem erro de classificação ou falha de registro.
+
+---
+
+### Passo 2 — Diário confiável no Obsidian
+
+**Por que segundo:** O briefing e o resumo diário dependem do diário. Se o diário tiver gaps, os outputs vão ter gaps. Resolver isso antes de construir qualquer saída.
+
+**O que fazer:**
+- Garantir que cada ação executada gera uma entrada no diário com: data, hora, origem, ação, resultado
+- Implementar confirmação de escrita — se o registro falhar, alerta imediato
+- Criar estrutura de diário por data que o briefing conseguirá ler facilmente depois
+
+**Critério para avançar:** Sem uma única entrada perdida por 7 dias.
+
+---
+
+### Passo 3 — Digest de e-mail da EG
+
+**Por que terceiro:** É a primeira automação que traz entrada externa (fora do WhatsApp) para dentro do sistema. Valida o padrão que será usado para todos os clientes. É simples o suficiente para construir rápido e complexo o suficiente para provar o conceito.
+
+**O que entrega:**
+- Todo dia às 8h, o agente lê a caixa de entrada do e-mail da EG
+- Classifica: urgente / ação necessária / informativo / ignorar
+- Envia resumo no WhatsApp com o que precisa de atenção hoje
+- Arquiva automaticamente os documentos recebidos no Obsidian
+
+**Critério para avançar:** Digest enviado todos os dias por 14 dias, sem falha e com classificação precisa.
+
+---
+
+### Passo 4 — Briefing matinal completo
+
+**Por que quarto:** Só faz sentido depois que o diário está confiável (Passo 2) e o digest de e-mail está funcionando (Passo 3). O briefing consolida os dois.
+
+**O que entrega às 8h todo dia:**
+- Resumo das ações executadas no dia anterior (do diário)
+- E-mails que precisam de ação (do digest)
 - Tarefas abertas no Obsidian sem prazo ou com prazo vencido
-- Ações executadas no dia anterior (resumo do diário)
 - Pendências de clientes ativos
 
-Por que primeiro: é a automação de maior impacto imediato para a operação interna e valida toda a cadeia (diário → consolidação → envio).
+**Critério para avançar:** Briefing enviado todos os dias por 14 dias, útil o suficiente para que a equipe EG o use como ponto de partida do dia.
 
-**2. Registro de ação via WhatsApp → Obsidian**
-Qualquer membro da EG manda mensagem no grupo interno e o agente registra no lugar certo do Obsidian. Já existe parcialmente no módulo WhatsApp OS — esta fase é refinamento e uso real contínuo.
+---
 
-**3. Digest de e-mail da EG**
-Agente lê a caixa de entrada da EG, classifica por urgência e envia resumo no WhatsApp com: o que chegou, o que precisa de resposta hoje, o que pode esperar. Valida a receita que será replicada para o Braço 1 (subcontratados).
+### Passo 5 — Primeira receita de execução real
+
+**Por que quinto:** Com comunicação, memória, entrada e saída funcionando, é hora de construir a primeira automação que age em um sistema externo. A mais simples e mais comum primeiro.
+
+**Receita escolhida: lançamento de documento financeiro**
+- Gatilho: cliente envia arquivo (invoice, cupom fiscal) no WhatsApp
+- Confirmação: agente confirma o que vai fazer
+- Execução: faz login no sistema, lança o documento
+- Saída: confirma no WhatsApp + registra no diário
+
+**Por que essa:** É o caso de uso mais claro do produto — alta frequência, baixo risco de erro, resultado imediatamente visível para o cliente.
+
+**Critério para avançar:** 20 execuções sem erro, com registro completo em todas.
+
+---
+
+### Fase 1 — Validação interna da EG
+
+Antes de vender o produto, a EG roda o produto nas automações acima dentro da própria operação. Cada passo que funcionar vira receita validada — pronta para virar produto.
 
 ---
 
