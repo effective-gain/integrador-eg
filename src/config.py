@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     obsidian_api_url: str = "http://localhost:27124"
     obsidian_api_key: str
 
+    gmail_user: str = ""
+    gmail_app_password: str = ""
+    gmail_imap_host: str = "imap.gmail.com"
+
     log_level: str = "INFO"
     environment: str = "development"
 

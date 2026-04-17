@@ -91,3 +91,29 @@ class DiarioEntrada(BaseModel):
     conteudo_resumo: str
     resultado: str = Field(default="sucesso", description="sucesso | erro | ambigua")
     erro_detalhe: Optional[str] = None
+
+
+class EmailCategoria(str, Enum):
+    INVOICE = "invoice"
+    TASK = "task"
+    CODIGO_2FA = "codigo_2fa"
+    INFORMATIVO = "informativo"
+    SPAM = "spam"
+
+
+class EmailEntrada(BaseModel):
+    uid: str
+    remetente: str
+    assunto: str
+    corpo: str
+    data: datetime
+    tem_anexo: bool = False
+
+
+class EmailClassificado(BaseModel):
+    email: EmailEntrada
+    categoria: EmailCategoria
+    resumo: str
+    urgente: bool = False
+    codigo_2fa: Optional[str] = None
+    acao_sugerida: Optional[str] = None
