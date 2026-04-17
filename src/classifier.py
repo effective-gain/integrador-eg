@@ -15,7 +15,8 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "classifier.md"
+SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "classifier_system.md"
+USER_PROMPT_PATH   = Path(__file__).parent.parent / "prompts" / "classifier_user.md"
 MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 512
 
@@ -25,16 +26,11 @@ def _projeto_do_grupo(grupo_nome: str) -> str:
     for chave, projeto in GRUPOS_PROJETOS.items():
         if chave in nome_lower:
             return projeto
-    return grupo_nome  # fallback: usa o próprio nome do grupo
+    return grupo_nome
 
 
-def _carregar_prompt() -> str:
-    return PROMPT_PATH.read_text(encoding="utf-8")
-
-
-def _montar_prompt(mensagem: MensagemEntrada, projeto: str) -> str:
-    template = _carregar_prompt()
-    # usar replace manual evita conflito com chaves {} do JSON no template
+def _montar_user_message(mensagem: MensagemEntrada, projeto: str) -> str:
+    template = USER_PROMPT_PATH.read_text(encoding="utf-8")
     return (
         template
         .replace("{grupo_nome}", mensagem.grupo_nome)
@@ -43,6 +39,32 @@ def _montar_prompt(mensagem: MensagemEntrada, projeto: str) -> str:
         .replace("{remetente}", mensagem.remetente)
         .replace("{conteudo}", mensagem.conteudo)
     )
+
+
+def _montar_system_blocks(dna_projeto: str) -> list[dict]:
+    """
+    Monta os blocos de system com cache_control seguindo o padrão EG OS:
+      Bloco 1 — Instruções estáticas do classificador (CACHED)
+      Bloco 2 — DNA narrativo do projeto (CACHED quando presente)
+    """
+    instrucoes = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+
+    blocos: list[dict] = [
+        {
+            "type": "text",
+            "text": instrucoes,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
+    if dna_projeto.strip():
+        blocos.append({
+            "type": "text",
+            "text": f"## DNA DO PROJETO\n\n{dna_projeto}",
+            "cache_control": {"type": "ephemeral"},
+        })
+
+    return blocos
 
 
 def _parse_resultado(raw: str, projeto: str) -> ClassificacaoResult:
@@ -60,7 +82,6 @@ def _parse_resultado(raw: str, projeto: str) -> ClassificacaoResult:
         )
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         logger.warning("Falha no parse do classificador: %s | raw: %s", e, raw[:200])
-        # fallback seguro: marca como ambígua para não agir no escuro
         return ClassificacaoResult(
             acao=AcaoTipo.AMBIGUA,
             projeto=projeto,
@@ -75,17 +96,23 @@ class Classifier:
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
 
-    def classificar(self, mensagem: MensagemEntrada) -> ClassificacaoResult:
+    def classificar(self, mensagem: MensagemEntrada, dna_projeto: str = "") -> ClassificacaoResult:
         projeto = _projeto_do_grupo(mensagem.grupo_nome)
-        prompt = _montar_prompt(mensagem, projeto)
+        system_blocks = _montar_system_blocks(dna_projeto)
+        user_message = _montar_user_message(mensagem, projeto)
 
-        logger.info("Classificando mensagem do grupo '%s' → projeto '%s'", mensagem.grupo_nome, projeto)
+        com_dna = bool(dna_projeto.strip())
+        logger.info(
+            "Classificando | grupo='%s' projeto='%s' dna=%s",
+            mensagem.grupo_nome, projeto, "sim" if com_dna else "não",
+        )
 
         try:
             response = self.client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                messages=[{"role": "user", "content": prompt}],
+                system=system_blocks,
+                messages=[{"role": "user", "content": user_message}],
             )
             raw = response.content[0].text
             resultado = _parse_resultado(raw, projeto)

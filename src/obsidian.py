@@ -136,6 +136,19 @@ class ObsidianClient:
             "existe": True,
         }
 
+    async def ler_dna_projeto(self, projeto: str) -> str:
+        """
+        Lê a nota de projeto do vault (01 - Projetos/{projeto}.md) e retorna o conteúdo.
+        Retorna string vazia se o arquivo não existir ou Obsidian estiver offline — o
+        classificador funciona normalmente sem DNA, apenas com menos contexto.
+        """
+        caminho = f"01 - Projetos/{projeto}.md"
+        try:
+            return await self.ler_nota(caminho)
+        except ObsidianError:
+            logger.warning("DNA do projeto '%s' indisponível — classificando sem contexto", projeto)
+            return ""
+
     async def consultar_tasks(self, projeto: str) -> str:
         """
         Lê o arquivo de tasks do projeto e retorna as pendentes formatadas para WhatsApp.

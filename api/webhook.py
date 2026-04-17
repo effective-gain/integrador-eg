@@ -146,9 +146,23 @@ async def webhook_whatsapp(request: Request):
         contexto_conversa.limpar(mensagem.grupo_id, mensagem.remetente)
         logger.info("Contexto de esclarecimento recuperado para %s", mensagem.remetente)
 
+    # --- DNA narrativo do projeto (contexto para o classificador) ---
+    projeto_inferido = mensagem.grupo_nome  # fallback antes da classificação
+    dna_projeto = ""
+    try:
+        from src.models import GRUPOS_PROJETOS
+        nome_lower = mensagem.grupo_nome.lower()
+        for chave, nome in GRUPOS_PROJETOS.items():
+            if chave in nome_lower:
+                projeto_inferido = nome
+                break
+        dna_projeto = await obsidian.ler_dna_projeto(projeto_inferido)
+    except Exception as e:
+        logger.warning("DNA não carregado para '%s': %s", projeto_inferido, e)
+
     # --- classificação ---
     try:
-        resultado = classifier.classificar(mensagem)
+        resultado = classifier.classificar(mensagem, dna_projeto=dna_projeto)
     except Exception as e:
         logger.error("Erro no classificador: %s", e)
         await _responder(mensagem.grupo_id, "⚠️ Erro interno ao processar a mensagem. O time EG foi notificado.")

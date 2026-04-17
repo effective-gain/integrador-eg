@@ -162,3 +162,37 @@ async def test_health_check_offline():
     respx.get(f"{BASE_URL}/").mock(side_effect=httpx.ConnectError("offline"))
     client = make_client()
     assert await client.health_check() is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ler_dna_projeto_retorna_conteudo():
+    conteudo = "# K2Con\n\nFase atual: Diagnóstico."
+    respx.get(f"{BASE_URL}/vault/01 - Projetos/K2Con.md").mock(
+        return_value=httpx.Response(200, text=conteudo)
+    )
+    client = make_client()
+    dna = await client.ler_dna_projeto("K2Con")
+    assert "Diagnóstico" in dna
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ler_dna_projeto_inexistente_retorna_vazio():
+    respx.get(f"{BASE_URL}/vault/01 - Projetos/Desconhecido.md").mock(
+        return_value=httpx.Response(404)
+    )
+    client = make_client()
+    dna = await client.ler_dna_projeto("Desconhecido")
+    assert dna == ""
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ler_dna_projeto_offline_retorna_vazio():
+    respx.get(f"{BASE_URL}/vault/01 - Projetos/K2Con.md").mock(
+        side_effect=httpx.ConnectError("offline")
+    )
+    client = make_client()
+    dna = await client.ler_dna_projeto("K2Con")
+    assert dna == ""
