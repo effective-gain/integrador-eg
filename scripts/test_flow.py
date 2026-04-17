@@ -1,128 +1,125 @@
 """
-test_flow.py — Simula o fluxo completo sem WhatsApp
-Testa: mensagem → classificador → Obsidian → resposta
-Usar antes de ativar nos grupos reais.
+test_flow.py — Teste de fluxo completo do Integrador EG
+Testa: classificação Claude + escrita Obsidian + diário
+
+Uso:
+  python scripts/test_flow.py
+
+Requer:
+  - .env com ANTHROPIC_API_KEY e OBSIDIAN_API_KEY
+  - Obsidian aberto com plugin REST API ativo na porta 27124
 """
 
-import anthropic
-import requests
-import json
-import urllib3
+import asyncio
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Config Obsidian
-OBSIDIAN_KEY = "de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd"
-OBSIDIAN_URL = "https://127.0.0.1:27124"
-OBSIDIAN_HEADERS = {
-    "Authorization": f"Bearer {OBSIDIAN_KEY}",
-    "Content-Type": "text/markdown"
-}
+from dotenv import load_dotenv
+load_dotenv()
 
-# Config Claude
-client = anthropic.Anthropic()
-CLASSIFIER_PROMPT = open("../prompts/classifier.md").read()
-RESPONDER_PROMPT = open("../prompts/responder.md").read()
+from src.classifier import Classifier
+from src.models import AcaoTipo, DiarioEntrada, MensagemEntrada
+from src.obsidian import ObsidianClient, ObsidianError
 
-GRUPOS_PROJETOS = {
-    "k2con": "01 - Projetos/K2Con.md",
-    "eg_food": "01 - Projetos/EG Food.md",
-    "gestao_eg": "01 - Projetos/Gestao EG.md",
-    "mkt_eg": "01 - Projetos/MKT EG.md",
-    "quickbooks": "01 - Projetos/Quickbooks WhatsApp.md",
-    "geral": "04 - Inbox/"
-}
+VERDE = "\033[92m"
+VERMELHO = "\033[91m"
+AMARELO = "\033[93m"
+RESET = "\033[0m"
+NEGRITO = "\033[1m"
 
-def step1_classificar(grupo: str, mensagem: str) -> dict:
-    """Classifica a intenção da mensagem via Claude"""
-    prompt = f"{CLASSIFIER_PROMPT}\n\nGrupo: {grupo}\nMensagem: {mensagem}"
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    texto = response.content[0].text.strip()
-    inicio = texto.find("{")
-    fim = texto.rfind("}") + 1
-    return json.loads(texto[inicio:fim])
+CASOS = [
+    {"descricao": "Nota simples PT",       "grupo": "gestao-eg", "mensagem": "preciso registrar que o fornecedor confirmou entrega para sexta",     "acao_esperada": AcaoTipo.CRIAR_NOTA},
+    {"descricao": "Task com prazo",         "grupo": "k2con",     "mensagem": "criar task: revisar proposta comercial até quinta-feira",            "acao_esperada": AcaoTipo.CRIAR_TASK},
+    {"descricao": "Lançamento financeiro",  "grupo": "gestao-eg", "mensagem": "lançamento: pagamento Cliff $500 referente novembro",               "acao_esperada": AcaoTipo.REGISTRAR_LANCAMENTO},
+    {"descricao": "Mensagem ambígua",       "grupo": "gestao-eg", "mensagem": "reunião",                                                           "acao_esperada": AcaoTipo.AMBIGUA},
+    {"descricao": "Consulta de pendências", "grupo": "k2con",     "mensagem": "o que está pendente no projeto?",                                   "acao_esperada": AcaoTipo.CONSULTAR_TASKS},
+    {"descricao": "Mensagem em espanhol",   "grupo": "eg-build",  "mensagem": "necesito registrar una decisión: cambiamos el proveedor",           "acao_esperada": AcaoTipo.REGISTRAR_DECISAO},
+]
 
-def step2_executar_obsidian(acao: dict, grupo: str) -> bool:
-    """Executa a ação no Obsidian via REST API"""
-    from datetime import datetime
-    data_hoje = datetime.now().strftime("%Y-%m-%d")
-    hora_agora = datetime.now().strftime("%H:%M")
 
-    if acao["acao"] == "criar_nota":
-        caminho = f"04 - Inbox/{data_hoje}-{grupo}.md"
-        conteudo = f"---\ntipo: inbox\ndata: {data_hoje}\ntags: [inbox, {grupo}]\n---\n\n# {acao['conteudo'][:50]}\n\n{acao['conteudo']}\n"
+def ok(msg):    print(f"  {VERDE}✅ {msg}{RESET}")
+def erro(msg):  print(f"  {VERMELHO}❌ {msg}{RESET}")
+def aviso(msg): print(f"  {AMARELO}⚠️  {msg}{RESET}")
+def h(msg):     print(f"\n{NEGRITO}{msg}{RESET}")
 
-    elif acao["acao"] == "criar_reuniao":
-        caminho = f"04 - Inbox/Reuniao-{data_hoje}-{grupo}.md"
-        conteudo = f"---\ntipo: reuniao\ndata: {data_hoje}\nprojeto: {acao['projeto']}\ntags: [reuniao, {grupo}]\n---\n\n# Reuniao {data_hoje}\n\n## Discussao\n{acao['conteudo']}\n\n## Acoes\n- [ ] \n"
 
-    elif acao["acao"] == "criar_task":
-        caminho = acao.get("destinatario", f"04 - Inbox/{data_hoje}-task.md")
-        conteudo = f"\n- [ ] {acao['conteudo']} — {data_hoje}\n"
-        # Para tasks, faz append na nota do projeto
-        r = requests.post(
-            f"{OBSIDIAN_URL}/vault/{caminho.replace(' ', '%20')}",
-            headers=OBSIDIAN_HEADERS,
-            data=conteudo.encode("utf-8"),
-            verify=False
+async def checar_obsidian(client):
+    h("[ 1 ] Conexão Obsidian")
+    ok_obs = await client.health_check()
+    ok("Obsidian respondendo") if ok_obs else erro("Obsidian offline — abra com plugin REST API ativo")
+    return ok_obs
+
+
+async def checar_diario(client):
+    h("[ 2 ] Escrita no diário")
+    try:
+        await client.registrar_diario(DiarioEntrada(
+            grupo="gestao-eg", projeto="Gestão EG",
+            acao=AcaoTipo.CRIAR_NOTA,
+            conteudo_resumo="[teste automático] validação pipeline",
+            resultado="sucesso",
+        ))
+        ok("Diário atualizado no Obsidian")
+        return True
+    except ObsidianError as e:
+        erro(f"Falha ao escrever no diário: {e}")
+        return False
+
+
+def checar_classificador(clf):
+    h("[ 3 ] Classificador Claude")
+    acertos = 0
+    for caso in CASOS:
+        msg = MensagemEntrada(
+            grupo_id=f"{caso['grupo']}@g.us", grupo_nome=caso["grupo"],
+            remetente="Teste", conteudo=caso["mensagem"], timestamp=datetime.now(),
         )
-        return r.status_code in [200, 204]
+        try:
+            r = clf.classificar(msg)
+            if r.acao == caso["acao_esperada"]:
+                ok(f"{caso['descricao']} → {r.acao.value}  |  \"{r.resumo_confirmacao}\"")
+                acertos += 1
+            else:
+                erro(f"{caso['descricao']}\n     esperado={caso['acao_esperada'].value}  recebido={r.acao.value}")
+        except Exception as e:
+            erro(f"{caso['descricao']} → exceção: {e}")
+    print(f"\n  {acertos}/{len(CASOS)} casos corretos")
+    return acertos
 
-    elif acao["acao"] == "registrar_lancamento":
-        caminho = f"04 - Inbox/Lancamento-{data_hoje}-{grupo}.md"
-        conteudo = f"---\ntipo: lancamento\ndata: {data_hoje}\nprojeto: {acao['projeto']}\ntags: [financeiro, {grupo}]\n---\n\n# Lancamento {data_hoje}\n\n{acao['conteudo']}\n"
 
+async def main():
+    print(f"\n{NEGRITO}{'='*55}\n  INTEGRADOR EG — PASSO 1: FLUXO COMPLETO\n{'='*55}{RESET}")
+
+    api_key     = os.getenv("ANTHROPIC_API_KEY")
+    obs_key     = os.getenv("OBSIDIAN_API_KEY", "")
+    obs_url     = os.getenv("OBSIDIAN_API_URL", "http://localhost:27124")
+
+    if not api_key:
+        erro("ANTHROPIC_API_KEY não configurada no .env"); sys.exit(1)
+
+    obsidian = ObsidianClient(base_url=obs_url, api_key=obs_key)
+    clf      = Classifier(api_key=api_key)
+
+    obs_ok    = await checar_obsidian(obsidian)
+    diario_ok = await checar_diario(obsidian) if obs_ok else False
+    acertos   = checar_classificador(clf)
+
+    h("[ RESUMO ]")
+    print(f"  Obsidian:      {'✅' if obs_ok else '❌'}")
+    print(f"  Diário:        {'✅' if diario_ok else '❌'}")
+    print(f"  Classificador: {acertos}/{len(CASOS)}")
+
+    tudo_ok = obs_ok and diario_ok and acertos == len(CASOS)
+    if tudo_ok:
+        print(f"\n{VERDE}{NEGRITO}  PASSO 1 APROVADO ✅{RESET}\n")
     else:
-        caminho = f"04 - Inbox/{data_hoje}-{acao['acao']}-{grupo}.md"
-        conteudo = f"---\ntipo: {acao['acao']}\ndata: {data_hoje}\ntags: [{grupo}]\n---\n\n{acao['conteudo']}\n"
+        print(f"\n{AMARELO}{NEGRITO}  PASSO 1 INCOMPLETO — ajuste os itens acima{RESET}\n")
+    sys.exit(0 if tudo_ok else 1)
 
-    r = requests.put(
-        f"{OBSIDIAN_URL}/vault/{caminho.replace(' ', '%20')}",
-        headers=OBSIDIAN_HEADERS,
-        data=conteudo.encode("utf-8"),
-        verify=False
-    )
-    return r.status_code in [200, 204]
-
-def step3_gerar_resposta(acao: dict) -> str:
-    """Gera resposta para enviar no WhatsApp"""
-    prompt = f"{RESPONDER_PROMPT}\n\nAção: {acao['acao']}\nProjeto: {acao['projeto']}\nConteúdo: {acao['conteudo']}\nDestinatário: {acao.get('destinatario', '04 - Inbox/')}"
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=150,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.content[0].text.strip()
-
-def simular_mensagem(grupo: str, mensagem: str):
-    print(f"\n{'='*50}")
-    print(f"SIMULANDO — Grupo: {grupo}")
-    print(f"Mensagem: {mensagem}")
-    print("-" * 50)
-
-    print("→ Step 1: Classificando intenção...")
-    acao = step1_classificar(grupo, mensagem)
-    print(f"  Ação: {acao['acao']} | Projeto: {acao['projeto']} | Prioridade: {acao['prioridade']}")
-
-    print("→ Step 2: Executando no Obsidian...")
-    ok = step2_executar_obsidian(acao, grupo)
-    print(f"  Resultado: {'✅ Sucesso' if ok else '❌ Falhou'}")
-
-    print("→ Step 3: Gerando resposta WhatsApp...")
-    resposta = step3_gerar_resposta(acao)
-    print(f"  Resposta:\n  {resposta}")
 
 if __name__ == "__main__":
-    print("WhatsApp OS — Teste de Fluxo Completo")
-
-    # Mensagens de teste
-    simular_mensagem("k2con", "Reunião com cliente hoje, pediram ajuste na proposta")
-    simular_mensagem("gestao_eg", "Allp Fit pagou abril, lança no financeiro")
-    simular_mensagem("mkt_eg", "Criar post LinkedIn sobre AI First para semana que vem")
-
-    print(f"\n{'='*50}")
-    print("Fluxo testado. Verifique 04 - Inbox/ no Obsidian.")
+    asyncio.run(main())
