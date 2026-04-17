@@ -539,6 +539,70 @@ integrador-eg/
 
 ---
 
+## Curva ABC — gargalos e dinâmicas da operação
+
+### Classe A — Críticos. Se quebrar, o produto para.
+
+**1. Sessão de browser**
+O sistema inteiro depende de sessões ativas no Chrome. Se a sessão cai e a restauração falha, nenhuma automação executa. Cada plataforma nova é um ponto de falha novo. É o gargalo número 1.
+
+**2. Máquina local como único ponto de execução**
+Tudo roda nessa máquina. Queda de energia, travamento, atualização forçada do sistema — o produto para. Sem redundância hoje. É o risco estrutural mais alto do modelo atual.
+
+**3. Interpretação da mensagem pelo Claude**
+Se o agente entender errado o que o cliente pediu e o cliente confirmar sem ler, uma ação errada é executada. A mensagem de confirmação precisa ser inequívoca — mostrar exatamente o que vai acontecer antes de agir.
+
+**4. Credenciais e 2FA**
+Login automático quebra quando o sistema exige autenticação de dois fatores via SMS ou app autenticador. O agente não captura esse código sozinho. Bloqueio real em várias plataformas — precisa de solução antes de mapear a receita.
+
+---
+
+### Classe B — Importantes. Degradam o produto se ignorados.
+
+**5. Mudanças de UI nas plataformas**
+Quando QuickBooks, Instagram ou qualquer portal muda o layout, o script Playwright quebra silenciosamente. Quanto mais receitas ativas, mais manutenção. Precisa de monitoramento e processo de atualização rápida.
+
+**6. Qualidade da receita**
+A execução é tão confiável quanto a receita que a descreve. Um passo vago gera comportamento imprevisível. A EG precisa de padrão rigoroso de escrita e teste obrigatório antes de qualquer receita ir ao ar.
+
+**7. Onboarding de cliente novo**
+Cada cliente novo demanda: cofre no Obsidian, perfil Chrome, receitas mapeadas, prompt desenvolvido e testado. É trabalho manual. Sem um processo padrão e estimativa de tempo, o onboarding não escala.
+
+**8. Volume inesperado**
+Se um cliente gera mais ações do que o previsto, as execuções precisam de fila. Sem fila, ações simultâneas se sobrepõem e geram erros. A fila é infraestrutura básica antes de colocar mais de um cliente em produção.
+
+---
+
+### Classe C — Monitoramento. Tolerantes a falha pontual, mas importantes na recorrência.
+
+**9. Briefing matinal**
+Falha num dia não impacta operação. Falha toda semana gera desconfiança do cliente.
+
+**10. Diário do Obsidian**
+Se uma entrada não for registrada, o dado se perde. Não quebra a operação, mas compromete o histórico e o controle de volume — que é exatamente o que justifica o valor do serviço.
+
+**11. Resumo de ações**
+Depende do diário estar correto. Gap no diário = gap no resumo = cliente percebe que algo não foi registrado.
+
+---
+
+### Dinâmicas possíveis — como cada uma é tratada
+
+| # | Situação | Tratamento |
+|---|----------|-----------|
+| 1 | Ação clara → cliente confirma | Executa → registra no diário → ok |
+| 2 | Mensagem ambígua | Agente pede esclarecimento antes de confirmar |
+| 3 | Cliente confirma → execução falha | Retry automático → se falhar 2x, alerta EG |
+| 4 | Sessão expirada | Restauração silenciosa → executa → cliente não vê |
+| 5 | Sessão falha na restauração | EG é alertada → ação entra em fila até resolução |
+| 6 | Sistema exige 2FA | Ação pausada → EG alertada → resolve infraestrutura antes de reativar |
+| 7 | UI da plataforma mudou | Script quebra → EG alertada → receita atualizada antes de reativar |
+| 8 | Volume alto no dia | Fila de execução → processa em ordem → diário registra tudo |
+| 9 | Ação fora do escopo | Agente recusa com mensagem clara → registra no diário |
+| 10 | Máquina offline | Ações perdidas → gap no diário → cliente recebe explicação no briefing do dia seguinte |
+
+---
+
 ## Como este README funciona
 
 Este arquivo é atualizado a cada ideia, decisão ou mudança de direção — inclusive durante conversas de planejamento. Ele documenta o **raciocínio** por trás das decisões — não só o que foi feito, mas por que foi feito assim e o que foi descartado.
