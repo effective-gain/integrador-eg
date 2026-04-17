@@ -323,30 +323,44 @@ Cada execução é registrada automaticamente em `Obsidian → 04 - Inbox/Instag
 
 ### O que será
 
-Um módulo que monitora e responde mensagens e comentários em redes sociais (Instagram, Facebook, TikTok, LinkedIn) em tempo real — sem API oficial, via automação de browser com Playwright.
+Um módulo que monitora e responde mensagens e comentários em **todas as redes sociais** (Instagram, Facebook, TikTok, LinkedIn, e outras) em tempo real — sem API oficial, via automação de browser com Playwright, com respostas geradas pelo Claude via API.
+
+### Como funciona a resposta
+
+Cada cliente tem seu próprio **prompt específico** configurado no sistema. Esse prompt define a personalidade, o tom, o escopo de assuntos e os limites do que o agente pode e não pode responder. O bot usa a Claude API com esse prompt como contexto e responde de forma autônoma — sem precisar de confirmação humana para cada mensagem, pois o prompt já é o "contrato" de comportamento.
+
+O volume de interações é dinâmico e varia de acordo com a realidade de cada cliente. O sistema escala conforme a demanda.
 
 ### Por que sem API oficial
 
-As APIs oficiais são restritivas: exigem aprovação de app (semanas a meses), têm rate limits baixos, escopo limitado por tipo de conta, e podem ser revogadas por mudança de política. Para um produto de resposta em tempo real para múltiplos clientes isso cria dependência e fragilidade.
+As APIs oficiais são restritivas: exigem aprovação de app (semanas a meses), têm rate limits baixos, escopo limitado por tipo de conta, e podem ser revogadas por mudança de política. Para um produto de resposta em tempo real para múltiplos clientes, isso cria dependência e fragilidade.
 
-A abordagem via browser é mais robusta: o agente navega com uma sessão ativa e age como um humano faria.
+A abordagem via browser é mais robusta: o agente navega com uma sessão ativa e age como um humano faria — lê o que aparece na tela, entende o contexto e responde.
+
+### Arquitetura por cliente
+
+Cada cliente tem:
+- Um perfil Chrome com sessão ativa nas redes sociais configuradas
+- Um prompt específico que define o comportamento do bot (tom, escopo, limites)
+- Um conjunto de redes sociais monitoradas, definido conforme a dinâmica do cliente
 
 ### Desafios a resolver (em design)
 
-1. **Gestão de sessão** — cada rede social precisa de um perfil Chrome com sessão persistente. O Instagram Keeper já prova esse padrão.
-2. **Humanização** — redes sociais detectam bots por cadência de ação, user agent e ausência de movimentos de mouse. Estratégias: delays variáveis, movimentos simulados.
-3. **Leitura de notificações** — cada plataforma tem seu layout. O módulo precisa saber onde estão as mensagens não lidas.
-4. **Contexto da resposta** — o agente lê o histórico da conversa ou o post original antes de gerar a resposta.
-5. **Confirmação antes de postar** — respostas públicas ou em DM passam pelo mecanismo de confirmação no WhatsApp antes de serem publicadas.
+1. **Gestão de sessão** — cada rede social por cliente precisa de um perfil Chrome com sessão persistente. O Instagram Keeper já prova que esse padrão funciona.
+2. **Humanização** — redes sociais detectam bots por cadência de ação e ausência de comportamento humano. Estratégias: delays variáveis, intervalos realistas entre respostas.
+3. **Leitura de notificações** — cada plataforma tem seu layout e muda frequentemente. O módulo precisa ser resiliente a mudanças de UI.
+4. **Contexto da resposta** — antes de gerar a resposta, o agente lê o histórico da conversa ou o post original para que o Claude tenha contexto completo.
+5. **Prompt por cliente** — o sistema precisa de uma forma de gerenciar e versionar os prompts de cada cliente. Uma mudança de tom ou escopo deve ser aplicada sem reiniciar o sistema.
 
 ### Redes sociais previstas
 
 | Rede | Prioridade | Tipo de interação |
 |------|-----------|-------------------|
 | Instagram | Alta | DMs + comentários |
-| Facebook | Média | Comentários + Messenger |
+| Facebook | Alta | Comentários + Messenger |
 | TikTok | Média | Comentários |
-| LinkedIn | Baixa | Mensagens |
+| LinkedIn | Média | Mensagens |
+| Outras | Conforme cliente | A definir |
 
 ---
 
