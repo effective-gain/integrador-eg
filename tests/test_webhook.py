@@ -92,6 +92,9 @@ def _montar_app_mockado(
         mock_obsidian.registrar_acao = AsyncMock(side_effect=ObsidianError("offline"))
         mock_obsidian.registrar_diario = AsyncMock()
 
+    mock_obsidian.ler_dna_projeto = AsyncMock(return_value="")
+    mock_obsidian.consultar_tasks = AsyncMock(return_value="- [ ] task exemplo")
+
     mock_whatsapp = MagicMock()
     mock_whatsapp.enviar_mensagem = AsyncMock(return_value=True)
     mock_whatsapp.download_audio = AsyncMock(return_value=b"fake-audio")
@@ -99,11 +102,17 @@ def _montar_app_mockado(
     mock_transcriber = MagicMock()
     mock_transcriber.transcrever = AsyncMock(return_value=transcricao)
 
+    mock_app_client = MagicMock()
+    mock_app_client.registrar_execucao = AsyncMock(return_value=False)
+    mock_app_client.registrar_lancamento = AsyncMock(return_value=False)
+    mock_app_client.registrar_lead = AsyncMock(return_value=False)
+
     wh.classifier = mock_classifier
     wh.obsidian = mock_obsidian
     wh.whatsapp = mock_whatsapp
     wh.transcriber = mock_transcriber
     wh.briefing_scheduler = None
+    wh.app_client = mock_app_client
 
     return TestClient(wh.app, raise_server_exceptions=False), mock_whatsapp, mock_classifier
 

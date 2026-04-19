@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 
+from src.app_client import AppClient
 from src.classifier import Classifier
 from src.config import settings
 from src.contexto import ContextoConversa, ContextoPendente
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 classifier: Classifier
 obsidian: ObsidianClient
 whatsapp: WhatsAppClient
+app_client: AppClient
 transcriber: Transcriber | None = None
 briefing_scheduler: BriefingScheduler | None = None
 contexto_conversa: ContextoConversa = ContextoConversa()
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI):
 
     classifier = Classifier(api_key=settings.anthropic_api_key)
     obsidian = ObsidianClient(base_url=settings.obsidian_api_url, api_key=settings.obsidian_api_key)
+    app_client = AppClient(base_url=settings.app_url, api_key=settings.app_api_key)
     whatsapp = WhatsAppClient(
         base_url=settings.evolution_api_url,
         instance=settings.evolution_instance,
@@ -225,8 +228,14 @@ async def webhook_whatsapp(request: Request):
     emoji = ACAO_EMOJI.get(resultado.acao, "✅")
     await _responder(mensagem.grupo_id, f"{emoji} {resultado.resumo_confirmacao}")
 
-    # --- registra no diário ---
+    # --- registra no diário e no dashboard ---
     await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
+    await app_client.registrar_execucao(
+        grupo_id=mensagem.grupo_id, grupo_nome=mensagem.grupo_nome,
+        acao=resultado.acao, projeto=resultado.projeto, resultado="sucesso",
+        remetente=mensagem.remetente, conteudo_resumo=mensagem.conteudo[:200],
+        dna_usado=bool(dna_projeto),
+    )
 
     return JSONResponse({"status": "ok", "acao": resultado.acao, "projeto": resultado.projeto})
 

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     webhook_secret: str = ""  # header x-webhook-secret da Evolution API
 
+    # integrador-eg-app (dashboard Next.js)
+    app_url: str = ""           # ex: https://integrador-app.effectivegain.com
+    app_api_key: str = ""       # mesmo valor que INTEGRADOR_API_KEY no Next.js
+
     log_level: str = "INFO"
     environment: str = "development"
 
