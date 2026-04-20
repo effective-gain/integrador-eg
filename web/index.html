@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Integrador EG</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main id="app">
+    <!-- LOGIN -->
+    <section id="view-login" class="card" hidden>
+      <h1>Integrador EG</h1>
+      <p class="muted">Acesso restrito</p>
+      <form id="form-login">
+        <label>
+          Email
+          <input type="email" name="email" required autocomplete="username" />
+        </label>
+        <label>
+          Senha
+          <input type="password" name="senha" required autocomplete="current-password" />
+        </label>
+        <button type="submit">Entrar</button>
+        <p id="login-error" class="error" hidden></p>
+      </form>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" hidden>
+      <header class="topbar">
+        <div>
+          <h1>Integrador EG</h1>
+          <p class="muted" id="welcome"></p>
+        </div>
+        <button id="btn-logout" class="ghost">Sair</button>
+      </header>
+
+      <div class="grid">
+        <div class="card status">
+          <h3>Ambiente</h3>
+          <p id="m-ambiente" class="big">—</p>
+        </div>
+        <div class="card status">
+          <h3>Obsidian</h3>
+          <p id="m-obsidian" class="big">—</p>
+        </div>
+        <div class="card status">
+          <h3>Whisper</h3>
+          <p id="m-whisper" class="big">—</p>
+        </div>
+        <div class="card status">
+          <h3>Briefing</h3>
+          <p id="m-briefing" class="big">—</p>
+        </div>
+        <div class="card status">
+          <h3>Dead letter</h3>
+          <p id="m-deadletter" class="big">—</p>
+          <p class="muted">operações pendentes</p>
+        </div>
+        <div class="card status">
+          <h3>WhatsApp</h3>
+          <p id="m-whatsapp" class="big">—</p>
+        </div>
+      </div>
+
+      <p class="muted tiny" id="last-update"></p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

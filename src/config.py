@@ -30,5 +30,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
 
+    # painel web (Postgres + sessão)
+    database_url: str = ""
+    session_secret: str = "dev-insecure-change-me"
+
 
 settings = Settings()

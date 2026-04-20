@@ -1,14 +1,18 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from src.app_client import AppClient
 from src.classifier import Classifier
 from src.config import settings
 from src.contexto import ContextoConversa, ContextoPendente
+from src.db import close_pool
 from src.dead_letter import DeadLetterQueue
 from src.email_reader import EmailReader
 from src.models import AcaoTipo, DiarioEntrada, ACAO_EMOJI
@@ -78,10 +82,27 @@ async def lifespan(app: FastAPI):
 
     if briefing_scheduler:
         briefing_scheduler.parar()
+    await close_pool()
     logger.info("Integrador EG encerrado")
 
 
 app = FastAPI(title="Integrador EG", lifespan=lifespan)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    session_cookie="eg_session",
+    same_site="lax",
+    https_only=settings.environment == "production",
+    max_age=60 * 60 * 8,  # 8h
+)
+
+_WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+if _WEB_DIR.exists():
+    app.mount("/static", StaticFiles(directory=_WEB_DIR), name="static")
+
+from api.frontend import router as frontend_router  # noqa: E402
+app.include_router(frontend_router)
 
 
 @app.get("/health")
