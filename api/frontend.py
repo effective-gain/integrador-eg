@@ -53,7 +53,12 @@ async def api_dashboard(
     from api.webhook import dead_letter, briefing_scheduler, transcriber, obsidian
     from src.config import settings
 
-    obsidian_ok = await obsidian.health_check()
+    obsidian_ok = False
+    if obsidian is not None:
+        try:
+            obsidian_ok = await obsidian.health_check()
+        except Exception:
+            obsidian_ok = False
     try:
         pendentes = await dead_letter.total_pendentes() if settings.database_url else 0
     except Exception:

@@ -25,11 +25,11 @@ from src.whatsapp import WhatsAppClient, WhatsAppError
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
-# --- dependências globais ---
-classifier: Classifier
-obsidian: ObsidianClient
-whatsapp: WhatsAppClient
-app_client: AppClient
+# --- dependências globais (inicializadas de forma resiliente no lifespan) ---
+classifier: Classifier | None = None
+obsidian: ObsidianClient | None = None
+whatsapp: WhatsAppClient | None = None
+app_client: AppClient | None = None
 transcriber: Transcriber | None = None
 briefing_scheduler: BriefingScheduler | None = None
 contexto_conversa: ContextoConversa = ContextoConversa()
@@ -38,20 +38,38 @@ dead_letter: DeadLetterQueue = DeadLetterQueue()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global classifier, obsidian, whatsapp, transcriber, briefing_scheduler
+    global classifier, obsidian, whatsapp, app_client, transcriber, briefing_scheduler
 
-    classifier = Classifier(api_key=settings.anthropic_api_key)
-    obsidian = ObsidianClient(base_url=settings.obsidian_api_url, api_key=settings.obsidian_api_key)
-    app_client = AppClient(base_url=settings.app_url, api_key=settings.app_api_key)
-    whatsapp = WhatsAppClient(
-        base_url=settings.evolution_api_url,
-        instance=settings.evolution_instance,
-        api_key=settings.evolution_api_key,
-    )
+    try:
+        classifier = Classifier(api_key=settings.anthropic_api_key)
+    except Exception as e:
+        logger.warning("Classifier não inicializado: %s", e)
+
+    try:
+        obsidian = ObsidianClient(base_url=settings.obsidian_api_url, api_key=settings.obsidian_api_key)
+    except Exception as e:
+        logger.warning("Obsidian client não inicializado: %s", e)
+
+    try:
+        app_client = AppClient(base_url=settings.app_url, api_key=settings.app_api_key)
+    except Exception as e:
+        logger.warning("AppClient não inicializado: %s", e)
+
+    try:
+        whatsapp = WhatsAppClient(
+            base_url=settings.evolution_api_url,
+            instance=settings.evolution_instance,
+            api_key=settings.evolution_api_key,
+        )
+    except Exception as e:
+        logger.warning("WhatsApp client não inicializado: %s", e)
 
     if settings.openai_api_key:
-        transcriber = Transcriber(api_key=settings.openai_api_key)
-        logger.info("Transcritor Whisper ativado")
+        try:
+            transcriber = Transcriber(api_key=settings.openai_api_key)
+            logger.info("Transcritor Whisper ativado")
+        except Exception as e:
+            logger.warning("Transcriber não inicializado: %s", e)
 
     is_serverless = bool(os.getenv("VERCEL"))
 
@@ -116,7 +134,12 @@ app.include_router(frontend_router)
 
 @app.get("/health")
 async def health():
-    obsidian_ok = await obsidian.health_check()
+    obsidian_ok = False
+    if obsidian is not None:
+        try:
+            obsidian_ok = await obsidian.health_check()
+        except Exception:
+            obsidian_ok = False
     try:
         pendentes = await dead_letter.total_pendentes() if settings.database_url else 0
     except Exception:
