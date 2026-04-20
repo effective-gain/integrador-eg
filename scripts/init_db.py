@@ -13,12 +13,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.auth import hash_senha
 from src.db import close_pool, get_pool
+from src.dead_letter import SCHEMA as DEAD_LETTER_SCHEMA
 
 ADMIN_EMAIL = "effectivegain@gmail.com"
 ADMIN_SENHA = "Fiona2025@"
 ADMIN_NOME = "Effective Gain"
 
-SCHEMA = """
+SCHEMA_USUARIOS = """
 CREATE TABLE IF NOT EXISTS usuarios (
     id          SERIAL PRIMARY KEY,
     email       TEXT NOT NULL UNIQUE,
@@ -32,7 +33,8 @@ CREATE TABLE IF NOT EXISTS usuarios (
 async def main() -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute(SCHEMA)
+        await conn.execute(SCHEMA_USUARIOS)
+        await conn.execute(DEAD_LETTER_SCHEMA)
         existente = await conn.fetchval(
             "SELECT id FROM usuarios WHERE email = $1", ADMIN_EMAIL.lower()
         )

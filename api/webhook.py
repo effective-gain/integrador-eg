@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -52,7 +53,9 @@ async def lifespan(app: FastAPI):
         transcriber = Transcriber(api_key=settings.openai_api_key)
         logger.info("Transcritor Whisper ativado")
 
-    if settings.briefing_numero_destino:
+    is_serverless = bool(os.getenv("VERCEL"))
+
+    if settings.briefing_numero_destino and not is_serverless:
         email_reader = None
         if settings.gmail_user and settings.gmail_app_password:
             email_reader = EmailReader(
@@ -72,10 +75,16 @@ async def lifespan(app: FastAPI):
         )
         briefing_scheduler.iniciar()
         logger.info("Briefing agendado para %s → %s", settings.briefing_hora, settings.briefing_numero_destino)
+    elif is_serverless:
+        logger.info("Ambiente serverless (Vercel): briefing desativado — use Vercel Cron")
 
-    pendentes = dead_letter.total_pendentes()
-    if pendentes:
-        logger.warning("Dead letter queue: %d operações pendentes ao iniciar", pendentes)
+    if settings.database_url:
+        try:
+            pendentes = await dead_letter.total_pendentes()
+            if pendentes:
+                logger.warning("Dead letter queue: %d operações pendentes ao iniciar", pendentes)
+        except Exception as e:
+            logger.warning("Dead letter indisponível ao iniciar: %s", e)
 
     logger.info("Integrador EG iniciado ✅")
     yield
@@ -108,12 +117,16 @@ app.include_router(frontend_router)
 @app.get("/health")
 async def health():
     obsidian_ok = await obsidian.health_check()
+    try:
+        pendentes = await dead_letter.total_pendentes() if settings.database_url else 0
+    except Exception:
+        pendentes = -1
     return {
         "status": "ok",
         "obsidian": "ok" if obsidian_ok else "offline",
         "whisper": "ativo" if transcriber else "inativo",
         "briefing": f"agendado {settings.briefing_hora}" if briefing_scheduler else "inativo",
-        "dead_letter_pendentes": dead_letter.total_pendentes(),
+        "dead_letter_pendentes": pendentes,
         "environment": settings.environment,
     }
 
@@ -230,7 +243,7 @@ async def webhook_whatsapp(request: Request):
         logger.info("Registrado em Obsidian: %s", caminho)
     except ObsidianError as e:
         logger.error("Erro no Obsidian: %s", e)
-        dead_letter.enfileirar(
+        await dead_letter.enfileirar(
             grupo_id=mensagem.grupo_id,
             grupo_nome=mensagem.grupo_nome,
             acao=resultado.acao,
@@ -264,7 +277,7 @@ async def webhook_whatsapp(request: Request):
 @app.post("/retry", dependencies=[Depends(_verificar_api_key)])
 async def retry_dead_letter():
     """Reprocessa operações da dead letter queue. Chamável manualmente ou pelo briefing."""
-    pendentes = dead_letter.listar_pendentes()
+    pendentes = await dead_letter.listar_pendentes()
     if not pendentes:
         return JSONResponse({"status": "ok", "processados": 0, "mensagem": "Fila vazia."})
 
@@ -278,11 +291,11 @@ async def retry_dead_letter():
                 projeto=item["projeto"],
                 conteudo=item["conteudo_formatado"],
             )
-            dead_letter.remover(item["id"])
+            await dead_letter.remover(item["id"])
             sucesso += 1
             logger.info("Dead letter: reprocessado id=%d | %s", item["id"], item["acao"])
         except ObsidianError as e:
-            dead_letter.incrementar_tentativas(item["id"], str(e))
+            await dead_letter.incrementar_tentativas(item["id"], str(e))
             falhou += 1
             logger.warning("Dead letter: falhou novamente id=%d: %s", item["id"], e)
 
@@ -290,7 +303,7 @@ async def retry_dead_letter():
         "status": "ok",
         "processados": sucesso,
         "falhou": falhou,
-        "restantes": dead_letter.total_pendentes(),
+        "restantes": await dead_letter.total_pendentes(),
     })
 
 

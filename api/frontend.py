@@ -54,12 +54,16 @@ async def api_dashboard(
     from src.config import settings
 
     obsidian_ok = await obsidian.health_check()
+    try:
+        pendentes = await dead_letter.total_pendentes() if settings.database_url else 0
+    except Exception:
+        pendentes = -1
     return JSONResponse({
         "usuario": {"email": usuario.email, "nome": usuario.nome},
         "ambiente": settings.environment,
         "obsidian": "online" if obsidian_ok else "offline",
         "whisper": "ativo" if transcriber else "inativo",
         "briefing": f"agendado {settings.briefing_hora}" if briefing_scheduler else "inativo",
-        "dead_letter_pendentes": dead_letter.total_pendentes(),
+        "dead_letter_pendentes": pendentes,
         "whatsapp_numero": "+55 31 97224-4045",
     })
