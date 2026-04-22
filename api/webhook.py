@@ -6,11 +6,13 @@ from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 
 from src.app_client import AppClient
+from src.bot_status import BotStatus, parsear_comando
 from src.classifier import Classifier
 from src.config import settings
 from src.contexto import ContextoConversa, ContextoPendente
 from src.dead_letter import DeadLetterQueue
 from src.email_reader import EmailReader
+from src.historico import HistoricoConversa
 from src.models import AcaoTipo, DiarioEntrada, ACAO_EMOJI
 from src.obsidian import ObsidianClient, ObsidianError
 from src.scheduler import BriefingScheduler
@@ -29,6 +31,8 @@ transcriber: Transcriber | None = None
 briefing_scheduler: BriefingScheduler | None = None
 contexto_conversa: ContextoConversa = ContextoConversa()
 dead_letter: DeadLetterQueue = DeadLetterQueue()
+bot_status: BotStatus = BotStatus()
+historico_conversa: HistoricoConversa = HistoricoConversa()
 
 
 @asynccontextmanager
@@ -93,6 +97,7 @@ async def health():
         "whisper": "ativo" if transcriber else "inativo",
         "briefing": f"agendado {settings.briefing_hora}" if briefing_scheduler else "inativo",
         "dead_letter_pendentes": dead_letter.total_pendentes(),
+        "grupos_com_historico": historico_conversa.total_grupos(),
         "environment": settings.environment,
     }
 
@@ -103,7 +108,7 @@ _api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 async def _verificar_api_key(api_key: str | None = Security(_api_key_header)) -> None:
     """Rejeita requisições sem x-api-key válida quando WEBHOOK_SECRET está configurado."""
     if not settings.webhook_secret:
-        return  # dev mode: sem secret configurado aceita tudo
+        return
     if api_key != settings.webhook_secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
 
@@ -118,7 +123,26 @@ async def webhook_whatsapp(request: Request):
 
     logger.info("Mensagem recebida | grupo=%s | tipo=%s", mensagem.grupo_nome, mensagem.tipo_original)
 
-    # --- transcrição de áudio ---
+    # ── 1. Comandos de controle do bot ──────────────────────────────────────
+    comando = parsear_comando(mensagem.conteudo)
+    if comando:
+        cmd, duracao = comando
+        if cmd == "pausar":
+            resposta = bot_status.pausar(mensagem.grupo_id, duracao, por=mensagem.remetente)
+        elif cmd == "ativar":
+            resposta = bot_status.ativar(mensagem.grupo_id)
+            historico_conversa.limpar(mensagem.grupo_id)
+        else:  # status / botstatus
+            resposta = bot_status.status_texto(mensagem.grupo_id)
+        await _responder(mensagem.grupo_id, resposta)
+        return JSONResponse({"status": "comando_bot", "comando": cmd})
+
+    # ── 2. Verifica se o bot está ativo neste grupo ─────────────────────────
+    if not bot_status.ativo(mensagem.grupo_id):
+        logger.info("Bot pausado — mensagem ignorada | grupo=%s", mensagem.grupo_nome)
+        return JSONResponse({"status": "bot_pausado"})
+
+    # ── 3. Transcrição de áudio ─────────────────────────────────────────────
     if mensagem.tipo_original == "audio":
         if not transcriber:
             await _responder(mensagem.grupo_id, "⚠️ Transcrição de áudio não configurada.")
@@ -138,7 +162,7 @@ async def webhook_whatsapp(request: Request):
             await _registrar_diario(mensagem, AcaoTipo.AMBIGUA, "desconhecido", "erro", str(e))
             return JSONResponse({"status": "transcricao_falhou"})
 
-    # --- contexto de conversa: resposta a esclarecimento pendente ---
+    # ── 4. Contexto de esclarecimento pendente ──────────────────────────────
     ctx = contexto_conversa.recuperar(mensagem.grupo_id, mensagem.remetente)
     if ctx:
         mensagem.conteudo = (
@@ -149,8 +173,8 @@ async def webhook_whatsapp(request: Request):
         contexto_conversa.limpar(mensagem.grupo_id, mensagem.remetente)
         logger.info("Contexto de esclarecimento recuperado para %s", mensagem.remetente)
 
-    # --- DNA narrativo do projeto (contexto para o classificador) ---
-    projeto_inferido = mensagem.grupo_nome  # fallback antes da classificação
+    # ── 5. DNA narrativo do projeto ─────────────────────────────────────────
+    projeto_inferido = mensagem.grupo_nome
     dna_projeto = ""
     try:
         from src.models import GRUPOS_PROJETOS
@@ -163,15 +187,18 @@ async def webhook_whatsapp(request: Request):
     except Exception as e:
         logger.warning("DNA não carregado para '%s': %s", projeto_inferido, e)
 
-    # --- classificação ---
+    # ── 6. Histórico multi-turn do grupo ────────────────────────────────────
+    historico = historico_conversa.obter(mensagem.grupo_id)
+
+    # ── 7. Classificação via tool calls ─────────────────────────────────────
     try:
-        resultado = classifier.classificar(mensagem, dna_projeto=dna_projeto)
+        resultado = classifier.classificar(mensagem, dna_projeto=dna_projeto, historico=historico)
     except Exception as e:
         logger.error("Erro no classificador: %s", e)
         await _responder(mensagem.grupo_id, "⚠️ Erro interno ao processar a mensagem. O time EG foi notificado.")
         raise HTTPException(status_code=500, detail=str(e))
 
-    # --- se ambígua: salva contexto, pede esclarecimento e encerra ---
+    # ── 8. Mensagem ambígua → pede esclarecimento ───────────────────────────
     if resultado.requer_esclarecimento:
         pergunta = resultado.pergunta_esclarecimento or "Pode detalhar melhor?"
         contexto_conversa.salvar(
@@ -187,7 +214,7 @@ async def webhook_whatsapp(request: Request):
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "ambigua")
         return JSONResponse({"status": "esclarecimento_solicitado"})
 
-    # --- consultar_tasks: lê Obsidian e responde sem escrever ---
+    # ── 9. consultar_tasks → lê Obsidian e responde sem escrever ───────────
     if resultado.acao == AcaoTipo.CONSULTAR_TASKS:
         try:
             resposta_tasks = await obsidian.consultar_tasks(resultado.projeto)
@@ -197,9 +224,14 @@ async def webhook_whatsapp(request: Request):
             return JSONResponse({"status": "obsidian_offline"})
         await _responder(mensagem.grupo_id, resposta_tasks)
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
+        if resultado.tool_use_id and resultado.tool_name:
+            historico_conversa.adicionar_turno(
+                mensagem.grupo_id, mensagem.conteudo,
+                resultado.tool_use_id, resultado.tool_name, resultado.tool_input or {},
+            )
         return JSONResponse({"status": "ok", "acao": resultado.acao, "projeto": resultado.projeto})
 
-    # --- registra no Obsidian ---
+    # ── 10. Registra no Obsidian ────────────────────────────────────────────
     try:
         caminho = await obsidian.registrar_acao(
             acao=resultado.acao,
@@ -224,11 +256,18 @@ async def webhook_whatsapp(request: Request):
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "erro", str(e))
         raise HTTPException(status_code=503, detail=str(e))
 
-    # --- confirma no grupo ---
+    # ── 11. Confirma no grupo ───────────────────────────────────────────────
     emoji = ACAO_EMOJI.get(resultado.acao, "✅")
     await _responder(mensagem.grupo_id, f"{emoji} {resultado.resumo_confirmacao}")
 
-    # --- registra no diário e no dashboard ---
+    # ── 12. Atualiza histórico multi-turn ───────────────────────────────────
+    if resultado.tool_use_id and resultado.tool_name:
+        historico_conversa.adicionar_turno(
+            mensagem.grupo_id, mensagem.conteudo,
+            resultado.tool_use_id, resultado.tool_name, resultado.tool_input or {},
+        )
+
+    # ── 13. Registra no diário e dashboard ─────────────────────────────────
     await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
     await app_client.registrar_execucao(
         grupo_id=mensagem.grupo_id, grupo_nome=mensagem.grupo_nome,
@@ -237,12 +276,25 @@ async def webhook_whatsapp(request: Request):
         dna_usado=bool(dna_projeto),
     )
 
+    # ── 14. Lançamento financeiro → notifica dashboard ──────────────────────
+    if resultado.acao == AcaoTipo.REGISTRAR_LANCAMENTO and resultado.lancamento_valor:
+        await app_client.registrar_lancamento(
+            descricao=resultado.conteudo_formatado[:200],
+            valor=resultado.lancamento_valor,
+            tipo=resultado.lancamento_tipo or "despesa",
+            projeto=resultado.projeto,
+            grupo_origem=mensagem.grupo_nome,
+            categoria=resultado.lancamento_categoria or "",
+            fornecedor=resultado.lancamento_fornecedor or "",
+            data_vencimento=resultado.lancamento_data_vencimento or "",
+        )
+
     return JSONResponse({"status": "ok", "acao": resultado.acao, "projeto": resultado.projeto})
 
 
 @app.post("/retry", dependencies=[Depends(_verificar_api_key)])
 async def retry_dead_letter():
-    """Reprocessa operações da dead letter queue. Chamável manualmente ou pelo briefing."""
+    """Reprocessa operações da dead letter queue."""
     pendentes = dead_letter.listar_pendentes()
     if not pendentes:
         return JSONResponse({"status": "ok", "processados": 0, "mensagem": "Fila vazia."})

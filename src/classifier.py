@@ -1,7 +1,21 @@
-import json
+"""
+Classificador de intenções do Integrador EG.
+
+Usa a Anthropic API com *tool use* nativo — o Claude chama a ferramenta
+correspondente à ação detectada em vez de retornar JSON que precisaria ser
+parseado. Isso elimina falhas de parsing e torna o sistema mais robusto.
+
+Padrão de caching (EG OS):
+  Bloco 1 — Instruções estáticas (CACHED, ephemeral)
+  Bloco 2 — DNA narrativo do projeto (CACHED quando presente)
+
+Historico multi-turn:
+  O array messages pode conter turnos anteriores do grupo (via HistoricoConversa),
+  dando ao Claude contexto sobre mensagens recentes sem precisar repetir o projeto.
+"""
+
 import logging
 from pathlib import Path
-from datetime import datetime
 
 import anthropic
 
@@ -16,10 +30,165 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "classifier_system.md"
-USER_PROMPT_PATH   = Path(__file__).parent.parent / "prompts" / "classifier_user.md"
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 512
+MAX_TOKENS = 1024  # tool calls precisam de mais tokens que plain JSON
 
+
+# ── Definição das ferramentas ──────────────────────────────────────────────────
+
+def _base_schema(extras: dict | None = None) -> dict:
+    """Schema base compartilhado pela maioria das ações."""
+    props = {
+        "projeto": {
+            "type": "string",
+            "description": "Nome do projeto conforme mapeado do grupo WhatsApp",
+        },
+        "conteudo_formatado": {
+            "type": "string",
+            "description": "Conteúdo em Markdown limpo pronto para salvar no Obsidian. "
+                           "Use ## Título, listas com -, negritos com **. "
+                           "Inclua data e remetente no cabeçalho.",
+        },
+        "resumo_confirmacao": {
+            "type": "string",
+            "description": "Frase curta de confirmação no idioma da mensagem. Ex: 'Nota criada para K2Con 📝'",
+        },
+        "prioridade": {
+            "type": "string",
+            "enum": ["alta", "media", "baixa"],
+            "description": "Prioridade inferida da mensagem",
+        },
+        "idioma_detectado": {
+            "type": "string",
+            "enum": ["pt", "es", "en"],
+            "description": "Idioma da mensagem original",
+        },
+    }
+    if extras:
+        props.update(extras)
+    return {
+        "type": "object",
+        "properties": props,
+        "required": ["projeto", "conteudo_formatado", "resumo_confirmacao"],
+    }
+
+
+TOOLS: list[dict] = [
+    {
+        "name": "criar_nota",
+        "description": "Registra uma nota, observação ou informação genérica no Obsidian.",
+        "input_schema": _base_schema(),
+    },
+    {
+        "name": "criar_reuniao",
+        "description": "Registra uma reunião — deve ter ao menos data, hora ou pauta identificável.",
+        "input_schema": _base_schema(),
+    },
+    {
+        "name": "criar_task",
+        "description": "Cria uma tarefa a ser executada, com ou sem prazo e responsável.",
+        "input_schema": _base_schema(),
+    },
+    {
+        "name": "registrar_decisao",
+        "description": "Documenta uma decisão tomada pela equipe.",
+        "input_schema": _base_schema(),
+    },
+    {
+        "name": "atualizar_status",
+        "description": "Atualiza o status de um projeto ou tarefa já existente.",
+        "input_schema": _base_schema(),
+    },
+    {
+        "name": "criar_daily",
+        "description": "Registra o diário do dia com atualizações gerais de progresso.",
+        "input_schema": _base_schema(),
+    },
+    {
+        "name": "consultar_tasks",
+        "description": "Consulta as tarefas pendentes do projeto. NÃO escreve nada — apenas lê.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "projeto": {
+                    "type": "string",
+                    "description": "Nome do projeto a consultar",
+                },
+                "resumo_confirmacao": {
+                    "type": "string",
+                    "description": "Mensagem de confirmação breve, ex: 'Consultando tasks de K2Con...'",
+                },
+            },
+            "required": ["projeto", "resumo_confirmacao"],
+        },
+    },
+    {
+        "name": "registrar_lancamento",
+        "description": "Registra um lançamento financeiro (valor, tipo, fornecedor, categoria).",
+        "input_schema": _base_schema({
+            "valor": {
+                "type": "number",
+                "description": "Valor numérico do lançamento (ex: 1500.00)",
+            },
+            "tipo": {
+                "type": "string",
+                "enum": ["receita", "despesa"],
+                "description": "Se é entrada ou saída de dinheiro",
+            },
+            "categoria": {
+                "type": "string",
+                "description": "Categoria do lançamento (ex: fornecedor, marketing, operacional)",
+            },
+            "fornecedor": {
+                "type": "string",
+                "description": "Nome do fornecedor ou cliente, se mencionado",
+            },
+            "data_vencimento": {
+                "type": "string",
+                "description": "Data de vencimento no formato YYYY-MM-DD, se mencionada",
+            },
+        }),
+    },
+    {
+        "name": "pedir_esclarecimento",
+        "description": (
+            "Use quando a mensagem for ambígua, faltar dados essenciais, ou "
+            "quando não for possível agir com segurança sem mais informação. "
+            "Exemplos: 'reunião' sem data/hora/pauta, projeto não identificável, "
+            "mensagem que poderia ser duas ações diferentes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "projeto": {
+                    "type": "string",
+                    "description": "Projeto inferido, ou 'desconhecido' se não identificável",
+                },
+                "pergunta": {
+                    "type": "string",
+                    "description": "Pergunta clara e objetiva para o usuário, no idioma da mensagem",
+                },
+            },
+            "required": ["projeto", "pergunta"],
+        },
+    },
+]
+
+# Mapeamento: nome da tool → AcaoTipo
+_TOOL_PARA_ACAO: dict[str, AcaoTipo] = {
+    "criar_nota":           AcaoTipo.CRIAR_NOTA,
+    "criar_reuniao":        AcaoTipo.CRIAR_REUNIAO,
+    "criar_task":           AcaoTipo.CRIAR_TASK,
+    "registrar_decisao":    AcaoTipo.REGISTRAR_DECISAO,
+    "atualizar_status":     AcaoTipo.ATUALIZAR_STATUS,
+    "criar_daily":          AcaoTipo.CRIAR_DAILY,
+    "consultar_tasks":      AcaoTipo.CONSULTAR_TASKS,
+    "registrar_lancamento": AcaoTipo.REGISTRAR_LANCAMENTO,
+    "pedir_esclarecimento": AcaoTipo.AMBIGUA,
+}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _projeto_do_grupo(grupo_nome: str) -> str:
     nome_lower = grupo_nome.lower()
@@ -29,26 +198,13 @@ def _projeto_do_grupo(grupo_nome: str) -> str:
     return grupo_nome
 
 
-def _montar_user_message(mensagem: MensagemEntrada, projeto: str) -> str:
-    template = USER_PROMPT_PATH.read_text(encoding="utf-8")
-    return (
-        template
-        .replace("{grupo_nome}", mensagem.grupo_nome)
-        .replace("{projeto}", projeto)
-        .replace("{timestamp}", mensagem.timestamp.strftime("%Y-%m-%d %H:%M"))
-        .replace("{remetente}", mensagem.remetente)
-        .replace("{conteudo}", mensagem.conteudo)
-    )
-
-
 def _montar_system_blocks(dna_projeto: str) -> list[dict]:
     """
-    Monta os blocos de system com cache_control seguindo o padrão EG OS:
-      Bloco 1 — Instruções estáticas do classificador (CACHED)
+    Blocos de system com cache_control (padrão EG OS):
+      Bloco 1 — Instruções estáticas (CACHED)
       Bloco 2 — DNA narrativo do projeto (CACHED quando presente)
     """
     instrucoes = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
-
     blocos: list[dict] = [
         {
             "type": "text",
@@ -56,55 +212,108 @@ def _montar_system_blocks(dna_projeto: str) -> list[dict]:
             "cache_control": {"type": "ephemeral"},
         }
     ]
-
     if dna_projeto.strip():
         blocos.append({
             "type": "text",
             "text": f"## DNA DO PROJETO\n\n{dna_projeto}",
             "cache_control": {"type": "ephemeral"},
         })
-
     return blocos
 
 
-def _parse_resultado(raw: str, projeto: str) -> ClassificacaoResult:
-    try:
-        data = json.loads(raw.strip())
-        return ClassificacaoResult(
-            acao=AcaoTipo(data["acao"]),
-            projeto=data.get("projeto", projeto),
-            conteudo_formatado=data["conteudo_formatado"],
-            prioridade=Prioridade(data.get("prioridade", "media")),
-            requer_esclarecimento=data.get("requer_esclarecimento", False),
-            pergunta_esclarecimento=data.get("pergunta_esclarecimento"),
-            resumo_confirmacao=data["resumo_confirmacao"],
-            idioma_detectado=data.get("idioma_detectado", "pt"),
-        )
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        logger.warning("Falha no parse do classificador: %s | raw: %s", e, raw[:200])
+def _montar_user_message(mensagem: MensagemEntrada, projeto: str) -> str:
+    return (
+        f"**Grupo:** {mensagem.grupo_nome}\n"
+        f"**Projeto:** {projeto}\n"
+        f"**Remetente:** {mensagem.remetente}\n"
+        f"**Data/Hora:** {mensagem.timestamp.strftime('%Y-%m-%d %H:%M')}\n\n"
+        f"**Mensagem:**\n{mensagem.conteudo}"
+    )
+
+
+def _resultado_de_tool(tool_name: str, tool_input: dict, tool_use_id: str, projeto: str) -> ClassificacaoResult:
+    """Converte o tool call do Claude em ClassificacaoResult."""
+    acao = _TOOL_PARA_ACAO.get(tool_name, AcaoTipo.AMBIGUA)
+
+    if tool_name == "pedir_esclarecimento":
+        pergunta = tool_input.get("pergunta", "Pode detalhar melhor?")
         return ClassificacaoResult(
             acao=AcaoTipo.AMBIGUA,
-            projeto=projeto,
-            conteudo_formatado=raw,
+            projeto=tool_input.get("projeto", projeto),
+            conteudo_formatado="",
             requer_esclarecimento=True,
-            pergunta_esclarecimento="Não entendi bem o que você precisa. Pode detalhar?",
-            resumo_confirmacao="Não entendi bem o que você precisa. Pode detalhar?",
+            pergunta_esclarecimento=pergunta,
+            resumo_confirmacao=pergunta,
+            tool_use_id=tool_use_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
         )
 
+    if tool_name == "consultar_tasks":
+        return ClassificacaoResult(
+            acao=AcaoTipo.CONSULTAR_TASKS,
+            projeto=tool_input.get("projeto", projeto),
+            conteudo_formatado="",
+            resumo_confirmacao=tool_input.get("resumo_confirmacao", "Consultando tasks..."),
+            tool_use_id=tool_use_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+        )
+
+    return ClassificacaoResult(
+        acao=acao,
+        projeto=tool_input.get("projeto", projeto),
+        conteudo_formatado=tool_input.get("conteudo_formatado", ""),
+        prioridade=Prioridade(tool_input.get("prioridade", "media")),
+        resumo_confirmacao=tool_input.get("resumo_confirmacao", "Registrado ✅"),
+        idioma_detectado=tool_input.get("idioma_detectado", "pt"),
+        # campos extras para lançamento financeiro
+        lancamento_valor=tool_input.get("valor"),
+        lancamento_tipo=tool_input.get("tipo"),
+        lancamento_categoria=tool_input.get("categoria"),
+        lancamento_fornecedor=tool_input.get("fornecedor"),
+        lancamento_data_vencimento=tool_input.get("data_vencimento"),
+        tool_use_id=tool_use_id,
+        tool_name=tool_name,
+        tool_input=tool_input,
+    )
+
+
+# ── Classifier ────────────────────────────────────────────────────────────────
 
 class Classifier:
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
 
-    def classificar(self, mensagem: MensagemEntrada, dna_projeto: str = "") -> ClassificacaoResult:
+    def classificar(
+        self,
+        mensagem: MensagemEntrada,
+        dna_projeto: str = "",
+        historico: list[dict] | None = None,
+    ) -> ClassificacaoResult:
+        """
+        Classifica a mensagem usando tool use nativo da Anthropic API.
+
+        Args:
+            mensagem:   Mensagem recebida do WhatsApp
+            dna_projeto: Conteúdo do DNA narrativo do projeto (opcional, cached)
+            historico:  Turnos anteriores do grupo para contexto multi-turn (opcional)
+
+        Returns:
+            ClassificacaoResult com a ação, projeto, conteúdo e metadados do tool call
+        """
         projeto = _projeto_do_grupo(mensagem.grupo_nome)
         system_blocks = _montar_system_blocks(dna_projeto)
         user_message = _montar_user_message(mensagem, projeto)
 
+        # Monta o array de messages: histórico anterior + mensagem atual
+        messages: list[dict] = [*(historico or []), {"role": "user", "content": user_message}]
+
         com_dna = bool(dna_projeto.strip())
+        com_hist = len(historico or []) // 3  # número de turnos anteriores
         logger.info(
-            "Classificando | grupo='%s' projeto='%s' dna=%s",
-            mensagem.grupo_nome, projeto, "sim" if com_dna else "não",
+            "Classificando | grupo='%s' projeto='%s' dna=%s historico=%d turnos",
+            mensagem.grupo_nome, projeto, "sim" if com_dna else "não", com_hist,
         )
 
         try:
@@ -112,16 +321,39 @@ class Classifier:
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 system=system_blocks,
-                messages=[{"role": "user", "content": user_message}],
+                tools=TOOLS,
+                tool_choice={"type": "any"},  # força sempre um tool call
+                messages=messages,
             )
-            raw = response.content[0].text
-            resultado = _parse_resultado(raw, projeto)
+
+            # Extrai o tool call da resposta
+            tool_block = next(
+                (b for b in response.content if b.type == "tool_use"),
+                None,
+            )
+
+            if tool_block is None:
+                logger.warning("Nenhum tool call retornado — usando fallback")
+                return ClassificacaoResult(
+                    acao=AcaoTipo.AMBIGUA,
+                    projeto=projeto,
+                    conteudo_formatado="",
+                    requer_esclarecimento=True,
+                    pergunta_esclarecimento="Não entendi bem. Pode detalhar?",
+                    resumo_confirmacao="Não entendi bem. Pode detalhar?",
+                )
+
+            resultado = _resultado_de_tool(
+                tool_name=tool_block.name,
+                tool_input=tool_block.input,
+                tool_use_id=tool_block.id,
+                projeto=projeto,
+            )
 
             logger.info(
-                "Classificação: acao=%s requer_esclarecimento=%s idioma=%s",
-                resultado.acao,
-                resultado.requer_esclarecimento,
-                resultado.idioma_detectado,
+                "Classificação: acao=%s projeto=%s requer_esclarecimento=%s idioma=%s",
+                resultado.acao, resultado.projeto,
+                resultado.requer_esclarecimento, resultado.idioma_detectado,
             )
             return resultado
 

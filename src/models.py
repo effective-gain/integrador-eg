@@ -76,6 +76,18 @@ class ClassificacaoResult(BaseModel):
     resumo_confirmacao: str = Field(..., description="Mensagem de confirmação para enviar ao cliente")
     idioma_detectado: str = Field(default="pt", description="pt | es | en")
 
+    # Metadados do tool call (preenchidos pelo Classifier com tool use)
+    tool_use_id: Optional[str] = Field(None, description="ID do tool_use retornado pela API")
+    tool_name: Optional[str] = Field(None, description="Nome da ferramenta chamada pelo Claude")
+    tool_input: Optional[dict] = Field(None, description="Input completo do tool call")
+
+    # Campos extras para registrar_lancamento
+    lancamento_valor: Optional[float] = Field(None, description="Valor do lançamento financeiro")
+    lancamento_tipo: Optional[str] = Field(None, description="receita | despesa")
+    lancamento_categoria: Optional[str] = Field(None)
+    lancamento_fornecedor: Optional[str] = Field(None)
+    lancamento_data_vencimento: Optional[str] = Field(None, description="YYYY-MM-DD")
+
 
 class ObsidianEscrita(BaseModel):
     caminho: str
