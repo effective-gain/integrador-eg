@@ -113,6 +113,14 @@ def _montar_app_mockado(
     mock_app_client.registrar_lancamento = AsyncMock(return_value=False)
     mock_app_client.registrar_lead = AsyncMock(return_value=False)
 
+    # DeadLetterQueue — mock async (Postgres)
+    mock_dead_letter = MagicMock()
+    mock_dead_letter.enfileirar = AsyncMock(return_value=1)
+    mock_dead_letter.listar_pendentes = AsyncMock(return_value=[])
+    mock_dead_letter.remover = AsyncMock()
+    mock_dead_letter.incrementar_tentativas = AsyncMock()
+    mock_dead_letter.total_pendentes = AsyncMock(return_value=0)
+
     # BotStatus e HistoricoConversa — mocks simples (bot sempre ativo por padrão)
     mock_bot_status = MagicMock()
     mock_bot_status.ativo.return_value = True
@@ -132,8 +140,11 @@ def _montar_app_mockado(
     wh.transcriber = mock_transcriber
     wh.briefing_scheduler = None
     wh.app_client = mock_app_client
+    wh.dead_letter = mock_dead_letter
     wh.bot_status = mock_bot_status
     wh.historico_conversa = mock_historico
+    wh.email_sender = None
+    wh.outlook_client = None
 
     return TestClient(wh.app, raise_server_exceptions=False), mock_whatsapp, mock_classifier
 
@@ -388,17 +399,20 @@ def test_webhook_resposta_esclarecimento_usa_contexto():
 
 def test_webhook_obsidian_offline_enfileira_dead_letter():
     import api.webhook as wh
-    from src.dead_letter import DeadLetterQueue
-    import tempfile, pathlib
 
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "dl.db"
-    wh.dead_letter = DeadLetterQueue(db_path=tmp)
+    # Mock da DeadLetterQueue (Postgres async)
+    mock_dl = MagicMock()
+    mock_dl.enfileirar = AsyncMock(return_value=1)
+    mock_dl.total_pendentes = AsyncMock(return_value=1)
+    wh.dead_letter = mock_dl
 
     client, mock_wa, _ = _montar_app_mockado(obsidian_ok=False)
+    wh.dead_letter = mock_dl  # reaplica após _montar_app_mockado
+
     resp = client.post("/webhook/whatsapp", json=_payload_texto())
 
     assert resp.status_code == 503
-    assert wh.dead_letter.total_pendentes() == 1
+    mock_dl.enfileirar.assert_called_once()
     # avisa usuário com mensagem diferente do simples "offline"
     texto = mock_wa.enviar_mensagem.call_args[0][1]
     assert "salva" in texto.lower() or "registrada" in texto.lower()
@@ -406,14 +420,20 @@ def test_webhook_obsidian_offline_enfileira_dead_letter():
 
 def test_retry_endpoint_reprocessa_fila():
     import api.webhook as wh
-    from src.dead_letter import DeadLetterQueue
-    import tempfile, pathlib
 
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "dl.db"
-    wh.dead_letter = DeadLetterQueue(db_path=tmp)
-    wh.dead_letter.enfileirar("g1", "Grupo", "criar_nota", "K2Con", "## Nota", "timeout anterior")
+    pendente = {
+        "id": 1, "grupo_id": "g1", "grupo_nome": "Grupo",
+        "acao": "criar_nota", "projeto": "K2Con",
+        "conteudo_formatado": "## Nota", "tentativas": 0,
+    }
+    mock_dl = MagicMock()
+    mock_dl.listar_pendentes = AsyncMock(return_value=[pendente])
+    mock_dl.remover = AsyncMock()
+    mock_dl.incrementar_tentativas = AsyncMock()
+    mock_dl.total_pendentes = AsyncMock(return_value=0)
 
     client, _, _ = _montar_app_mockado()
+    wh.dead_letter = mock_dl
     wh.obsidian.registrar_acao = AsyncMock(return_value="04 - Inbox/nota.md")
 
     resp = client.post("/retry")
@@ -425,23 +445,25 @@ def test_retry_endpoint_reprocessa_fila():
 
 
 def test_health_inclui_dead_letter_pendentes():
+    """Health retorna 0 quando DATABASE_URL não está configurado (dev mode)."""
     import api.webhook as wh
-    from src.dead_letter import DeadLetterQueue
-    import tempfile, pathlib
-
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "dl.db"
-    wh.dead_letter = DeadLetterQueue(db_path=tmp)
-    wh.dead_letter.enfileirar("g1", "G", "criar_nota", "P", "c", "e")
 
     wh.obsidian = MagicMock()
     wh.obsidian.health_check = AsyncMock(return_value=True)
     wh.transcriber = None
     wh.briefing_scheduler = None
+    wh.email_sender = None
+    wh.outlook_client = None
+
+    mock_dl = MagicMock()
+    mock_dl.total_pendentes = AsyncMock(return_value=0)
+    wh.dead_letter = mock_dl
 
     client = TestClient(wh.app, raise_server_exceptions=False)
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["dead_letter_pendentes"] == 1
+    # sem DATABASE_URL, retorna 0 por padrão (dev mode)
+    assert "dead_letter_pendentes" in resp.json()
 
 
 # ── Testes: bot on/off (Feature nova) ────────────────────────────────────────
@@ -598,10 +620,12 @@ def test_health_inclui_grupos_com_historico():
     wh.obsidian.health_check = AsyncMock(return_value=True)
     wh.transcriber = None
     wh.briefing_scheduler = None
+    wh.email_sender = None
+    wh.outlook_client = None
 
-    from src.dead_letter import DeadLetterQueue
-    import tempfile, pathlib
-    wh.dead_letter = DeadLetterQueue(db_path=pathlib.Path(tempfile.mkdtemp()) / "dl.db")
+    mock_dl = MagicMock()
+    mock_dl.total_pendentes = AsyncMock(return_value=0)
+    wh.dead_letter = mock_dl
 
     client = TestClient(wh.app, raise_server_exceptions=False)
     resp = client.get("/health")

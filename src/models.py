@@ -13,6 +13,10 @@ class AcaoTipo(str, Enum):
     CRIAR_DAILY = "criar_daily"
     ATUALIZAR_STATUS = "atualizar_status"
     CONSULTAR_TASKS = "consultar_tasks"
+    ENVIAR_EMAIL = "enviar_email"
+    RESPONDER_EMAIL = "responder_email"
+    ENCAMINHAR_EMAIL = "encaminhar_email"
+    CRIAR_RASCUNHO = "criar_rascunho"
     AMBIGUA = "ambigua"  # mensagem não tem intenção clara
 
 
@@ -42,6 +46,10 @@ ACAO_DESTINO: dict[AcaoTipo, str] = {
     AcaoTipo.CRIAR_DAILY:          "06 - Diario/{data}.md",
     AcaoTipo.ATUALIZAR_STATUS:     "02 - Projetos/{projeto}/status.md",
     AcaoTipo.CONSULTAR_TASKS:      "05 - Tasks/{projeto}-tasks.md",
+    AcaoTipo.ENVIAR_EMAIL:         "04 - Inbox/Email-{data}-{projeto}.md",
+    AcaoTipo.RESPONDER_EMAIL:      "04 - Inbox/Email-{data}-{projeto}.md",
+    AcaoTipo.ENCAMINHAR_EMAIL:     "04 - Inbox/Email-{data}-{projeto}.md",
+    AcaoTipo.CRIAR_RASCUNHO:       "04 - Inbox/Rascunho-{data}-{projeto}.md",
 }
 
 ACAO_EMOJI: dict[AcaoTipo, str] = {
@@ -53,6 +61,10 @@ ACAO_EMOJI: dict[AcaoTipo, str] = {
     AcaoTipo.CRIAR_DAILY:          "📆",
     AcaoTipo.ATUALIZAR_STATUS:     "🔄",
     AcaoTipo.CONSULTAR_TASKS:      "📋",
+    AcaoTipo.ENVIAR_EMAIL:         "📧",
+    AcaoTipo.RESPONDER_EMAIL:      "↩️",
+    AcaoTipo.ENCAMINHAR_EMAIL:     "↪️",
+    AcaoTipo.CRIAR_RASCUNHO:       "📝✉️",
 }
 
 
@@ -87,6 +99,15 @@ class ClassificacaoResult(BaseModel):
     lancamento_categoria: Optional[str] = Field(None)
     lancamento_fornecedor: Optional[str] = Field(None)
     lancamento_data_vencimento: Optional[str] = Field(None, description="YYYY-MM-DD")
+
+    # Campos específicos para ações de e-mail
+    email_para: Optional[str] = Field(None, description="Destinatário(s) — ex: cliente@empresa.com")
+    email_assunto: Optional[str] = Field(None, description="Assunto do e-mail")
+    email_corpo: Optional[str] = Field(None, description="Corpo completo do e-mail, pronto para envio")
+    email_tipo: Optional[str] = Field(None, description="invoice | pergunta | proposta | follow_up | personalizado")
+    email_message_id: Optional[str] = Field(None, description="ID da mensagem original (para responder/encaminhar)")
+    email_cc: Optional[str] = Field(None, description="CC do e-mail, separado por vírgulas")
+    email_bcc: Optional[str] = Field(None, description="BCC do e-mail, separado por vírgulas")
 
 
 class ObsidianEscrita(BaseModel):

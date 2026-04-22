@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Integrador EG</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════════════════════════
+       LOGIN
+  ══════════════════════════════════════════ -->
+  <div id="view-login" class="hidden">
+    <div class="login-box">
+      <div class="login-logo">
+        <div class="logo-mark">EG</div>
+        <div>
+          <div class="logo-text">Integrador EG</div>
+          <div class="logo-sub">Effective Gain · Portal de Automações</div>
+        </div>
+      </div>
+
+      <h2>Entrar na plataforma</h2>
+      <p class="login-desc">Acompanhe todas as automações executadas para o seu negócio.</p>
+
+      <form id="form-login">
+        <div class="form-field">
+          <label>E-mail</label>
+          <input type="email" id="login-email" required autocomplete="username" placeholder="seu@email.com" />
+        </div>
+        <div class="form-field">
+          <label>Senha</label>
+          <input type="password" id="login-senha" required autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div id="login-error" class="error-msg hidden"></div>
+        <button type="submit" class="btn btn-primary" id="btn-login">Entrar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       APP SHELL (pós-login)
+  ══════════════════════════════════════════ -->
+  <div id="view-app" class="hidden">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-brand">
+        <div class="topbar-logo">EG</div>
+        <span class="topbar-name">Integrador EG</span>
+        <span id="topbar-tag" class="topbar-tag">Portal</span>
+      </div>
+      <div class="topbar-right">
+        <span class="topbar-user" id="topbar-user"></span>
+        <button class="btn btn-ghost" id="btn-logout">Sair</button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs" id="tabs"></nav>
+
+    <!-- Conteúdo das abas -->
+    <main class="page" id="page-content"></main>
+
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast-hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

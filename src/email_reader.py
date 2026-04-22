@@ -1,5 +1,10 @@
 """
-Leitor de e-mails via IMAP (Gmail).
+Leitor de e-mails via IMAP (Gmail ou Outlook) e via Microsoft Graph API.
+
+Backends disponíveis:
+  - EmailReader         — IMAP genérico (Gmail: imap.gmail.com, Outlook: outlook.office365.com)
+  - OutlookGraphReader  — Microsoft Graph API (mais completo; requer OutlookClient configurado)
+
 Responsabilidade única: conectar, ler e parsear e-mails. Sem Claude aqui.
 """
 import email
@@ -9,12 +14,18 @@ import re
 from datetime import datetime
 from email.header import decode_header
 from email.message import Message
+from typing import TYPE_CHECKING
 
 from .models import EmailEntrada
 
+if TYPE_CHECKING:
+    from .outlook_client import OutlookClient
+
 logger = logging.getLogger(__name__)
 
-IMAP_HOST = "imap.gmail.com"
+IMAP_HOST_GMAIL   = "imap.gmail.com"
+IMAP_HOST_OUTLOOK = "outlook.office365.com"
+IMAP_HOST         = IMAP_HOST_GMAIL  # retrocompatibilidade
 IMAP_PORT = 993
 
 _REGEX_2FA = re.compile(
@@ -141,4 +152,79 @@ class EmailReader:
             corpo=_extrair_corpo(msg),
             data=data,
             tem_anexo=_tem_anexo(msg),
+        )
+
+
+class OutlookGraphReader:
+    """
+    Leitor de e-mails via Microsoft Graph API (outlook.office365.com).
+    Usa OutlookClient para acessar a caixa de entrada via REST, sem IMAP.
+    Mais poderoso que IMAP: suporta busca, categorias, message IDs para reply/forward.
+    """
+
+    def __init__(self, outlook_client: "OutlookClient"):
+        self.client = outlook_client
+
+    async def ler_nao_lidos(self, pasta: str = "Inbox", limite: int = 20) -> list[EmailEntrada]:
+        """Retorna até `limite` e-mails não lidos via Graph API."""
+        try:
+            msgs = await self.client.listar_mensagens(
+                pasta=pasta,
+                apenas_nao_lidos=True,
+                limite=limite,
+            )
+            return [self._parsear_graph(m) for m in msgs]
+        except Exception as e:
+            logger.error("OutlookGraphReader.ler_nao_lidos: %s", e)
+            return []
+
+    async def buscar_por_assunto(self, pattern: str, pasta: str = "Inbox", limite: int = 5) -> list[EmailEntrada]:
+        """Busca e-mails cujo assunto contenha `pattern` via Graph API."""
+        try:
+            msgs = await self.client.buscar_mensagens(
+                query=f'subject:{pattern}',
+                pasta=pasta,
+                limite=limite,
+            )
+            return [self._parsear_graph(m) for m in msgs]
+        except Exception as e:
+            logger.error("OutlookGraphReader.buscar_por_assunto '%s': %s", pattern, e)
+            return []
+
+    def _parsear_graph(self, msg: dict) -> EmailEntrada:
+        """Converte resposta Graph API → EmailEntrada."""
+        remetente = ""
+        rem = msg.get("from", {})
+        if rem:
+            addr = rem.get("emailAddress", {})
+            nome = addr.get("name", "")
+            mail = addr.get("address", "")
+            remetente = f"{nome} <{mail}>" if nome else mail
+
+        # Corpo: prefere text/plain
+        body = msg.get("body", {})
+        corpo = body.get("content", "")
+        if body.get("contentType", "html") == "html":
+            # Strips simples de HTML para o briefing
+            import re as _re
+            corpo = _re.sub(r"<[^>]+>", " ", corpo)
+            corpo = _re.sub(r"\s{2,}", " ", corpo).strip()
+
+        # Data
+        data_str = msg.get("receivedDateTime", "")
+        try:
+            data = datetime.fromisoformat(data_str.replace("Z", "+00:00"))
+        except Exception:
+            data = datetime.now()
+
+        # Anexos
+        tem_anexo = msg.get("hasAttachments", False)
+
+        return EmailEntrada(
+            uid=msg.get("id", ""),
+            remetente=remetente,
+            assunto=msg.get("subject", "(sem assunto)"),
+            corpo=corpo[:2000],   # limita para o briefing
+            data=data,
+            tem_anexo=tem_anexo,
         )
