@@ -64,7 +64,8 @@ ACAO_EMOJI: dict[AcaoTipo, str] = {
     AcaoTipo.ENVIAR_EMAIL:         "📧",
     AcaoTipo.RESPONDER_EMAIL:      "↩️",
     AcaoTipo.ENCAMINHAR_EMAIL:     "↪️",
-    AcaoTipo.CRIAR_RASCUNHO:       "📝✉️",
+    AcaoTipo.CRIAR_RASCUNHO:       "✉️",
+    AcaoTipo.AMBIGUA:              "❓",
 }
 
 

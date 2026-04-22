@@ -349,17 +349,17 @@ async def webhook_whatsapp(request: Request):
     if comando:
         cmd, duracao = comando
         if cmd == "pausar":
-            resposta = bot_status.pausar(mensagem.grupo_id, duracao, por=mensagem.remetente)
+            resposta = await bot_status.pausar(mensagem.grupo_id, duracao, por=mensagem.remetente)
         elif cmd == "ativar":
-            resposta = bot_status.ativar(mensagem.grupo_id)
+            resposta = await bot_status.ativar(mensagem.grupo_id)
             historico_conversa.limpar(mensagem.grupo_id)
         else:  # status / botstatus
-            resposta = bot_status.status_texto(mensagem.grupo_id)
+            resposta = await bot_status.status_texto(mensagem.grupo_id)
         await _responder(mensagem.grupo_id, resposta)
         return JSONResponse({"status": "comando_bot", "comando": cmd})
 
     # ── 2. Verifica se o bot está ativo neste grupo ─────────────────────────
-    if not bot_status.ativo(mensagem.grupo_id):
+    if not await bot_status.ativo(mensagem.grupo_id):
         logger.info("Bot pausado — mensagem ignorada | grupo=%s", mensagem.grupo_nome)
         return JSONResponse({"status": "bot_pausado"})
 

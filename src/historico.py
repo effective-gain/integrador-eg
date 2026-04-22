@@ -14,7 +14,6 @@ discutimos" ou "add mais uma task igual à anterior".
 """
 
 import logging
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -44,7 +43,7 @@ class HistoricoConversa:
     """
 
     def __init__(self, max_pares: int = MAX_PARES, ttl_horas: int = TTL_HORAS):
-        self._store: dict[str, _HistoricoGrupo] = defaultdict(_HistoricoGrupo)
+        self._store: dict[str, _HistoricoGrupo] = {}   # dict normal — defaultdict criava entradas fantasma
         # 3 blocos por par: user msg + assistant tool_use + user tool_result
         self._max_blocos = max_pares * 3
         self._ttl = timedelta(hours=ttl_horas)
@@ -53,8 +52,8 @@ class HistoricoConversa:
 
     def obter(self, grupo_id: str) -> list[dict]:
         """Retorna o histórico do grupo, ou [] se expirado ou vazio."""
-        h = self._store[grupo_id]
-        if not h.mensagens:
+        h = self._store.get(grupo_id)
+        if h is None or not h.mensagens:
             return []
         if datetime.now() - h.ultima_atividade > self._ttl:
             self.limpar(grupo_id)
@@ -63,7 +62,8 @@ class HistoricoConversa:
         return list(h.mensagens)
 
     def total_grupos(self) -> int:
-        return len(self._store)
+        """Retorna apenas grupos com histórico real (não entradas fantasma)."""
+        return sum(1 for h in self._store.values() if h.mensagens)
 
     # ── escrita ────────────────────────────────────────────────────────────
 
@@ -79,6 +79,8 @@ class HistoricoConversa:
         Adiciona um turno completo após uma classificação bem-sucedida.
         Registra: mensagem do usuário + tool_use do assistente + tool_result.
         """
+        if grupo_id not in self._store:
+            self._store[grupo_id] = _HistoricoGrupo()
         h = self._store[grupo_id]
         h.mensagens.extend([
             # 1. Mensagem do usuário

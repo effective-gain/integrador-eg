@@ -121,12 +121,12 @@ def _montar_app_mockado(
     mock_dead_letter.incrementar_tentativas = AsyncMock()
     mock_dead_letter.total_pendentes = AsyncMock(return_value=0)
 
-    # BotStatus e HistoricoConversa — mocks simples (bot sempre ativo por padrão)
+    # BotStatus — todos os métodos agora são async (Postgres)
     mock_bot_status = MagicMock()
-    mock_bot_status.ativo.return_value = True
-    mock_bot_status.pausar.return_value = "⏸️ Bot pausado"
-    mock_bot_status.ativar.return_value = "▶️ Bot reativado!"
-    mock_bot_status.status_texto.return_value = "✅ Bot ativo"
+    mock_bot_status.ativo = AsyncMock(return_value=True)
+    mock_bot_status.pausar = AsyncMock(return_value="⏸️ Bot pausado")
+    mock_bot_status.ativar = AsyncMock(return_value="▶️ Bot reativado!")
+    mock_bot_status.status_texto = AsyncMock(return_value="✅ Bot ativo")
 
     mock_historico = MagicMock()
     mock_historico.obter.return_value = []
@@ -145,6 +145,11 @@ def _montar_app_mockado(
     wh.historico_conversa = mock_historico
     wh.email_sender = None
     wh.outlook_client = None
+
+    # Desabilita verificação de API key em testes (WEBHOOK_SECRET pode estar no .env)
+    async def _skip_auth():
+        pass
+    wh.app.dependency_overrides[wh._verificar_api_key] = _skip_auth
 
     return TestClient(wh.app, raise_server_exceptions=False), mock_whatsapp, mock_classifier
 
@@ -175,6 +180,11 @@ def test_webhook_mensagem_ambigua_pede_esclarecimento():
 
 def test_webhook_ignora_mensagem_do_bot():
     import api.webhook as wh
+
+    async def _skip_auth():
+        pass
+    wh.app.dependency_overrides[wh._verificar_api_key] = _skip_auth
+
     client = TestClient(wh.app, raise_server_exceptions=False)
     payload = {
         "data": {
@@ -189,6 +199,11 @@ def test_webhook_ignora_mensagem_do_bot():
 
 def test_webhook_ignora_dm():
     import api.webhook as wh
+
+    async def _skip_auth():
+        pass
+    wh.app.dependency_overrides[wh._verificar_api_key] = _skip_auth
+
     client = TestClient(wh.app, raise_server_exceptions=False)
     payload = {
         "data": {
@@ -216,6 +231,12 @@ def test_webhook_obsidian_offline_retorna_503():
 def test_webhook_rejeita_api_key_invalida():
     import api.webhook as wh
     from src.config import settings
+
+    # Limpa qualquer override de auth de testes anteriores
+    wh.app.dependency_overrides.pop(wh._verificar_api_key, None)
+    # Garante que o cache do secret está limpo
+    wh._webhook_secret_cache = ""
+
     original = settings.webhook_secret
     settings.webhook_secret = "secret-correto"
 
@@ -228,6 +249,7 @@ def test_webhook_rejeita_api_key_invalida():
     assert resp.status_code == 403
 
     settings.webhook_secret = original
+    wh._webhook_secret_cache = ""
 
 
 def test_webhook_aceita_api_key_correta():
@@ -469,15 +491,12 @@ def test_health_inclui_dead_letter_pendentes():
 # ── Testes: bot on/off (Feature nova) ────────────────────────────────────────
 
 def test_comando_pausar_responde_e_retorna_comando_bot():
+    """Comando /pausar responde com confirmação e retorna status=comando_bot."""
     import api.webhook as wh
-    from src.bot_status import BotStatus
-    import tempfile, pathlib
-
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "bs.db"
-    wh.bot_status = BotStatus(db_path=tmp)
 
     client, mock_wa, _ = _montar_app_mockado()
-    wh.bot_status = BotStatus(db_path=tmp)  # garante instância real
+    # pausar retorna mensagem específica
+    wh.bot_status.pausar = AsyncMock(return_value="⏸️ Bot pausado indefinidamente.")
 
     resp = client.post("/webhook/whatsapp", json=_payload_texto(conteudo="/pausar"))
     assert resp.status_code == 200
@@ -489,15 +508,11 @@ def test_comando_pausar_responde_e_retorna_comando_bot():
 
 
 def test_comando_pausar_com_duracao():
+    """Comando /pausar 2h retorna mensagem com duração formatada."""
     import api.webhook as wh
-    from src.bot_status import BotStatus
-    import tempfile, pathlib
-
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "bs.db"
-    wh.bot_status = BotStatus(db_path=tmp)
 
     client, mock_wa, _ = _montar_app_mockado()
-    wh.bot_status = BotStatus(db_path=tmp)
+    wh.bot_status.pausar = AsyncMock(return_value="⏸️ Bot pausado por *2h*.")
 
     resp = client.post("/webhook/whatsapp", json=_payload_texto(conteudo="/pausar 2h"))
     assert resp.status_code == 200
@@ -507,16 +522,11 @@ def test_comando_pausar_com_duracao():
 
 
 def test_comando_ativar():
+    """Comando /ativar responde com confirmação de reativação."""
     import api.webhook as wh
-    from src.bot_status import BotStatus
-    import tempfile, pathlib
-
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "bs.db"
-    wh.bot_status = BotStatus(db_path=tmp)
-    wh.bot_status.pausar("120363000000@g.us")
 
     client, mock_wa, _ = _montar_app_mockado()
-    wh.bot_status = BotStatus(db_path=tmp)
+    wh.bot_status.ativar = AsyncMock(return_value="▶️ Bot reativado! Pode enviar comandos normalmente.")
 
     resp = client.post("/webhook/whatsapp", json=_payload_texto(conteudo="/ativar"))
     assert resp.status_code == 200
@@ -526,16 +536,12 @@ def test_comando_ativar():
 
 
 def test_bot_pausado_ignora_mensagens_normais():
+    """Quando bot está pausado, mensagens normais são ignoradas silenciosamente."""
     import api.webhook as wh
-    from src.bot_status import BotStatus
-    import tempfile, pathlib
-
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "bs.db"
-    bs = BotStatus(db_path=tmp)
-    bs.pausar("120363000000@g.us")
 
     client, mock_wa, mock_clf = _montar_app_mockado()
-    wh.bot_status = bs
+    # Simula bot pausado
+    wh.bot_status.ativo = AsyncMock(return_value=False)
 
     resp = client.post("/webhook/whatsapp", json=_payload_texto())
     assert resp.status_code == 200
@@ -546,15 +552,11 @@ def test_bot_pausado_ignora_mensagens_normais():
 
 
 def test_comando_status_bot():
+    """Comando /status retorna texto com situação atual do bot."""
     import api.webhook as wh
-    from src.bot_status import BotStatus
-    import tempfile, pathlib
-
-    tmp = pathlib.Path(tempfile.mkdtemp()) / "bs.db"
-    wh.bot_status = BotStatus(db_path=tmp)
 
     client, mock_wa, _ = _montar_app_mockado()
-    wh.bot_status = BotStatus(db_path=tmp)
+    wh.bot_status.status_texto = AsyncMock(return_value="✅ Bot ativo e pronto para receber comandos.")
 
     resp = client.post("/webhook/whatsapp", json=_payload_texto(conteudo="/status"))
     assert resp.status_code == 200

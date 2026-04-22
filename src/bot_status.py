@@ -1,5 +1,5 @@
 """
-Controle de status do bot por grupo WhatsApp.
+Controle de status do bot por grupo WhatsApp (Postgres async).
 
 Permite pausar/reativar o bot em grupos específicos via comandos:
   /pausar        — pausa indefinidamente
@@ -8,20 +8,31 @@ Permite pausar/reativar o bot em grupos específicos via comandos:
   /pausar 1h30m  — pausa por 1h30m
   /ativar        — reativa imediatamente
   /status        — mostra estado atual do bot no grupo
+
+Migrado de SQLite síncrono para Postgres async (asyncpg) para não
+bloquear o event loop do FastAPI e sobreviver a restarts de container.
 """
 
 import logging
 import re
-import sqlite3
 from datetime import datetime, timedelta
-from pathlib import Path
+
+from src.db import get_pool
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/bot_status.db")
-
 # Comandos reconhecidos (case-insensitive, com ou sem barra)
 PREFIXOS_COMANDO = ("/pausar", "/ativar", "/status", "/botstatus")
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS bot_status (
+    grupo_id      TEXT PRIMARY KEY,
+    ativo         BOOLEAN NOT NULL DEFAULT TRUE,
+    pausado_ate   TIMESTAMPTZ,
+    pausado_por   TEXT,
+    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
 
 
 def parsear_comando(texto: str) -> tuple[str, int | None] | None:
@@ -66,63 +77,46 @@ def _parsear_duracao(texto: str) -> int | None:
 
 
 class BotStatus:
-    """Controla se o bot está ativo ou pausado por grupo WhatsApp (SQLite)."""
-
-    def __init__(self, db_path: Path = DB_PATH):
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
-
-    # ── setup ──────────────────────────────────────────────────────────────
-
-    def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS bot_status (
-                    grupo_id      TEXT PRIMARY KEY,
-                    ativo         INTEGER NOT NULL DEFAULT 1,
-                    pausado_ate   TEXT,
-                    pausado_por   TEXT,
-                    atualizado_em TEXT NOT NULL
-                )
-            """)
+    """Controla se o bot está ativo ou pausado por grupo WhatsApp (Postgres async)."""
 
     # ── consulta ───────────────────────────────────────────────────────────
 
-    def ativo(self, grupo_id: str) -> bool:
+    async def ativo(self, grupo_id: str) -> bool:
         """Retorna True se o bot está ativo neste grupo (auto-reativa quando TTL expira)."""
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT ativo, pausado_ate FROM bot_status WHERE grupo_id = ?",
-                (grupo_id,),
-            ).fetchone()
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT ativo, pausado_ate FROM bot_status WHERE grupo_id = $1",
+            grupo_id,
+        )
 
         if row is None:
             return True  # sem registro → ativo por padrão
 
-        ativo, pausado_ate = row
+        ativo, pausado_ate = row["ativo"], row["pausado_ate"]
         if not ativo and pausado_ate:
-            if datetime.now() >= datetime.fromisoformat(pausado_ate):
-                self._setar_ativo(grupo_id)
+            if datetime.now(pausado_ate.tzinfo) >= pausado_ate:
+                await self._setar_ativo(grupo_id)
                 logger.info("Bot auto-reativado por TTL | grupo=%s", grupo_id)
                 return True
 
         return bool(ativo)
 
-    def status_texto(self, grupo_id: str) -> str:
+    async def status_texto(self, grupo_id: str) -> str:
         """Retorna texto legível com o status atual do bot no grupo."""
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT ativo, pausado_ate, pausado_por FROM bot_status WHERE grupo_id = ?",
-                (grupo_id,),
-            ).fetchone()
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT ativo, pausado_ate, pausado_por FROM bot_status WHERE grupo_id = $1",
+            grupo_id,
+        )
 
-        if row is None or row[0]:
+        if row is None or row["ativo"]:
             return "✅ Bot ativo e pronto para receber comandos."
 
-        _, pausado_ate, pausado_por = row
+        pausado_ate = row["pausado_ate"]
+        pausado_por = row["pausado_por"]
+
         if pausado_ate:
-            ate = datetime.fromisoformat(pausado_ate)
+            ate = pausado_ate.astimezone()
             return (
                 f"⏸️ Bot pausado até {ate.strftime('%d/%m às %H:%M')}.\n"
                 f"Use /ativar para reativar antes do prazo."
@@ -132,22 +126,25 @@ class BotStatus:
 
     # ── ações ──────────────────────────────────────────────────────────────
 
-    def pausar(self, grupo_id: str, minutos: int | None = None, por: str = "") -> str:
+    async def pausar(self, grupo_id: str, minutos: int | None = None, por: str = "") -> str:
         """Pausa o bot. Se minutos=None, pausa indefinidamente."""
         pausado_ate = None
         if minutos:
-            pausado_ate = (datetime.now() + timedelta(minutes=minutos)).isoformat()
+            pausado_ate = datetime.now() + timedelta(minutes=minutos)
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO bot_status (grupo_id, ativo, pausado_ate, pausado_por, atualizado_em)
-                VALUES (?, 0, ?, ?, ?)
-                ON CONFLICT(grupo_id) DO UPDATE SET
-                    ativo         = 0,
-                    pausado_ate   = excluded.pausado_ate,
-                    pausado_por   = excluded.pausado_por,
-                    atualizado_em = excluded.atualizado_em
-            """, (grupo_id, pausado_ate, por or None, datetime.now().isoformat()))
+        pool = await get_pool()
+        await pool.execute(
+            """
+            INSERT INTO bot_status (grupo_id, ativo, pausado_ate, pausado_por, atualizado_em)
+            VALUES ($1, FALSE, $2, $3, NOW())
+            ON CONFLICT (grupo_id) DO UPDATE SET
+                ativo         = FALSE,
+                pausado_ate   = EXCLUDED.pausado_ate,
+                pausado_por   = EXCLUDED.pausado_por,
+                atualizado_em = NOW()
+            """,
+            grupo_id, pausado_ate, por or None,
+        )
 
         logger.info("Bot pausado | grupo=%s | minutos=%s | por=%s", grupo_id, minutos, por)
 
@@ -160,22 +157,25 @@ class BotStatus:
             )
         return "⏸️ Bot pausado indefinidamente.\nUse /ativar quando quiser reativar."
 
-    def ativar(self, grupo_id: str) -> str:
+    async def ativar(self, grupo_id: str) -> str:
         """Reativa o bot para um grupo."""
-        self._setar_ativo(grupo_id)
+        await self._setar_ativo(grupo_id)
         logger.info("Bot ativado | grupo=%s", grupo_id)
         return "▶️ Bot reativado! Pode enviar comandos normalmente."
 
     # ── interno ────────────────────────────────────────────────────────────
 
-    def _setar_ativo(self, grupo_id: str) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO bot_status (grupo_id, ativo, pausado_ate, pausado_por, atualizado_em)
-                VALUES (?, 1, NULL, NULL, ?)
-                ON CONFLICT(grupo_id) DO UPDATE SET
-                    ativo         = 1,
-                    pausado_ate   = NULL,
-                    pausado_por   = NULL,
-                    atualizado_em = excluded.atualizado_em
-            """, (grupo_id, datetime.now().isoformat()))
+    async def _setar_ativo(self, grupo_id: str) -> None:
+        pool = await get_pool()
+        await pool.execute(
+            """
+            INSERT INTO bot_status (grupo_id, ativo, pausado_ate, pausado_por, atualizado_em)
+            VALUES ($1, TRUE, NULL, NULL, NOW())
+            ON CONFLICT (grupo_id) DO UPDATE SET
+                ativo         = TRUE,
+                pausado_ate   = NULL,
+                pausado_por   = NULL,
+                atualizado_em = NOW()
+            """,
+            grupo_id,
+        )

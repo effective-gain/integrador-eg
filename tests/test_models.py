@@ -14,7 +14,8 @@ def test_todos_os_tipos_de_acao_tem_destino():
 
 def test_todos_os_tipos_de_acao_tem_emoji():
     acoes_com_emoji = set(ACAO_EMOJI.keys())
-    acoes_reais = {a for a in AcaoTipo if a != AcaoTipo.AMBIGUA}
+    # Todos os tipos de ação (incluindo AMBIGUA) devem ter emoji mapeado
+    acoes_reais = set(AcaoTipo)
     assert acoes_reais == acoes_com_emoji, f"Ações sem emoji: {acoes_reais - acoes_com_emoji}"
 
 

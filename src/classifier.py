@@ -150,6 +150,108 @@ TOOLS: list[dict] = [
         }),
     },
     {
+        "name": "enviar_email",
+        "description": "Redige e envia um novo e-mail para um ou mais destinatários.",
+        "input_schema": _base_schema({
+            "email_para": {
+                "type": "string",
+                "description": "Destinatário(s) — ex: cliente@empresa.com",
+            },
+            "email_assunto": {
+                "type": "string",
+                "description": "Assunto do e-mail",
+            },
+            "email_corpo": {
+                "type": "string",
+                "description": "Corpo completo do e-mail, pronto para envio",
+            },
+            "email_tipo": {
+                "type": "string",
+                "enum": ["invoice", "pergunta", "proposta", "follow_up", "personalizado"],
+                "description": "Tipo/categoria do e-mail",
+            },
+            "email_cc": {
+                "type": "string",
+                "description": "CC separado por vírgulas (opcional)",
+            },
+            "email_bcc": {
+                "type": "string",
+                "description": "BCC separado por vírgulas (opcional)",
+            },
+        }),
+    },
+    {
+        "name": "responder_email",
+        "description": "Responde a um e-mail recebido. Requer referência ao e-mail original.",
+        "input_schema": _base_schema({
+            "email_para": {
+                "type": "string",
+                "description": "Destinatário (normalmente quem enviou o e-mail original)",
+            },
+            "email_assunto": {
+                "type": "string",
+                "description": "Assunto com Re: prefixado",
+            },
+            "email_corpo": {
+                "type": "string",
+                "description": "Corpo da resposta",
+            },
+            "email_message_id": {
+                "type": "string",
+                "description": "ID do e-mail original para threading (se conhecido)",
+            },
+            "email_cc": {
+                "type": "string",
+                "description": "CC separado por vírgulas (opcional)",
+            },
+        }),
+    },
+    {
+        "name": "encaminhar_email",
+        "description": "Encaminha um e-mail existente para outro destinatário.",
+        "input_schema": _base_schema({
+            "email_para": {
+                "type": "string",
+                "description": "Novo destinatário para encaminhar",
+            },
+            "email_assunto": {
+                "type": "string",
+                "description": "Assunto com Fwd: prefixado",
+            },
+            "email_corpo": {
+                "type": "string",
+                "description": "Corpo com conteúdo encaminhado e comentário adicional",
+            },
+            "email_message_id": {
+                "type": "string",
+                "description": "ID do e-mail original (se conhecido)",
+            },
+        }),
+    },
+    {
+        "name": "criar_rascunho",
+        "description": "Salva um rascunho de e-mail no Obsidian sem enviar.",
+        "input_schema": _base_schema({
+            "email_para": {
+                "type": "string",
+                "description": "Destinatário pretendido",
+            },
+            "email_assunto": {
+                "type": "string",
+                "description": "Assunto do rascunho",
+            },
+            "email_corpo": {
+                "type": "string",
+                "description": "Corpo do rascunho",
+            },
+            "email_tipo": {
+                "type": "string",
+                "enum": ["invoice", "pergunta", "proposta", "follow_up", "personalizado"],
+                "description": "Tipo/categoria do e-mail",
+            },
+        }),
+    },
+    {
         "name": "pedir_esclarecimento",
         "description": (
             "Use quando a mensagem for ambígua, faltar dados essenciais, ou "
@@ -184,8 +286,15 @@ _TOOL_PARA_ACAO: dict[str, AcaoTipo] = {
     "criar_daily":          AcaoTipo.CRIAR_DAILY,
     "consultar_tasks":      AcaoTipo.CONSULTAR_TASKS,
     "registrar_lancamento": AcaoTipo.REGISTRAR_LANCAMENTO,
+    "enviar_email":         AcaoTipo.ENVIAR_EMAIL,
+    "responder_email":      AcaoTipo.RESPONDER_EMAIL,
+    "encaminhar_email":     AcaoTipo.ENCAMINHAR_EMAIL,
+    "criar_rascunho":       AcaoTipo.CRIAR_RASCUNHO,
     "pedir_esclarecimento": AcaoTipo.AMBIGUA,
 }
+
+# Ferramentas de e-mail — extraem campos email_* do tool_input
+_EMAIL_TOOLS = {"enviar_email", "responder_email", "encaminhar_email", "criar_rascunho"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -260,6 +369,19 @@ def _resultado_de_tool(tool_name: str, tool_input: dict, tool_use_id: str, proje
             tool_input=tool_input,
         )
 
+    # Campos de e-mail — presentes apenas nas ferramentas de e-mail
+    email_kwargs: dict = {}
+    if tool_name in _EMAIL_TOOLS:
+        email_kwargs = {
+            "email_para":       tool_input.get("email_para"),
+            "email_assunto":    tool_input.get("email_assunto"),
+            "email_corpo":      tool_input.get("email_corpo"),
+            "email_tipo":       tool_input.get("email_tipo"),
+            "email_message_id": tool_input.get("email_message_id"),
+            "email_cc":         tool_input.get("email_cc"),
+            "email_bcc":        tool_input.get("email_bcc"),
+        }
+
     return ClassificacaoResult(
         acao=acao,
         projeto=tool_input.get("projeto", projeto),
@@ -276,6 +398,7 @@ def _resultado_de_tool(tool_name: str, tool_input: dict, tool_use_id: str, proje
         tool_use_id=tool_use_id,
         tool_name=tool_name,
         tool_input=tool_input,
+        **email_kwargs,
     )
 
 
