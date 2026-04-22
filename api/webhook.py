@@ -12,12 +12,15 @@ from starlette.middleware.sessions import SessionMiddleware
 from src.app_client import AppClient
 from src.classifier import Classifier
 from src.config import settings
+from src.configuracoes import carregar_para_settings
 from src.contexto import ContextoConversa, ContextoPendente
 from src.db import close_pool
 from src.dead_letter import DeadLetterQueue
 from src.email_reader import EmailReader
+from src.email_sender import EmailSender
 from src.models import AcaoTipo, DiarioEntrada, ACAO_EMOJI
 from src.obsidian import ObsidianClient, ObsidianError
+from src.outlook_client import OutlookClient
 from src.scheduler import BriefingScheduler
 from src.transcriber import Transcriber, TranscritorError
 from src.whatsapp import WhatsAppClient, WhatsAppError
@@ -31,6 +34,8 @@ obsidian: ObsidianClient | None = None
 whatsapp: WhatsAppClient | None = None
 app_client: AppClient | None = None
 transcriber: Transcriber | None = None
+email_sender: EmailSender | None = None       # SMTP fallback (Gmail)
+outlook_client: OutlookClient | None = None   # Microsoft Graph API (preferencial)
 briefing_scheduler: BriefingScheduler | None = None
 contexto_conversa: ContextoConversa = ContextoConversa()
 dead_letter: DeadLetterQueue = DeadLetterQueue()
@@ -38,15 +43,38 @@ dead_letter: DeadLetterQueue = DeadLetterQueue()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global classifier, obsidian, whatsapp, app_client, transcriber, briefing_scheduler
+    global classifier, obsidian, whatsapp, app_client, transcriber, email_sender, outlook_client, briefing_scheduler
+
+    # ── 1. Carregar configurações dinâmicas do banco (sobrepõem o .env) ──────
+    cfg: dict[str, str] = {}
+    if settings.database_url:
+        try:
+            cfg = await carregar_para_settings()
+            if cfg:
+                logger.info("Configurações carregadas do banco: %s chaves", len(cfg))
+        except Exception as e:
+            logger.warning("Não foi possível carregar configurações do banco: %s", e)
+
+    def _cfg(chave: str, fallback: str = "") -> str:
+        """Retorna valor do banco se existir, senão o fallback (.env / padrão)."""
+        return cfg.get(chave) or fallback
+
+    # ── 2. Inicializar serviços com valores mesclados ─────────────────────────
 
     try:
         classifier = Classifier(api_key=settings.anthropic_api_key)
     except Exception as e:
         logger.warning("Classifier não inicializado: %s", e)
 
+    # Obsidian — key e URL podem vir do banco
+    _obsidian_key = _cfg("obsidian_api_key", settings.obsidian_api_key)
+    _obsidian_url = _cfg("obsidian_api_url", settings.obsidian_api_url)
     try:
-        obsidian = ObsidianClient(base_url=settings.obsidian_api_url, api_key=settings.obsidian_api_key)
+        obsidian = ObsidianClient(base_url=_obsidian_url, api_key=_obsidian_key)
+        if _obsidian_key:
+            logger.info("Obsidian inicializado (%s)", _obsidian_url)
+        else:
+            logger.warning("Obsidian: API key não configurada")
     except Exception as e:
         logger.warning("Obsidian client não inicializado: %s", e)
 
@@ -55,14 +83,59 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("AppClient não inicializado: %s", e)
 
+    # WhatsApp — instância pode vir do banco (configurada pelo portal)
+    _wa_instance = _cfg("evolution_instance", settings.evolution_instance)
     try:
         whatsapp = WhatsAppClient(
             base_url=settings.evolution_api_url,
-            instance=settings.evolution_instance,
+            instance=_wa_instance,
             api_key=settings.evolution_api_key,
         )
+        if _wa_instance:
+            logger.info("WhatsApp inicializado (instância: %s)", _wa_instance)
+        else:
+            logger.warning("WhatsApp: instância não configurada")
     except Exception as e:
         logger.warning("WhatsApp client não inicializado: %s", e)
+
+    # SMTP Gmail — credenciais podem vir do banco
+    _gmail_user = _cfg("gmail_user", settings.smtp_user or settings.gmail_user)
+    _gmail_pass = _cfg("gmail_app_password", settings.smtp_password or settings.gmail_app_password)
+    _smtp_host  = _cfg("smtp_host", settings.smtp_host)
+    _smtp_port  = int(_cfg("smtp_port", str(settings.smtp_port)))
+
+    if _gmail_user and _gmail_pass:
+        try:
+            email_sender = EmailSender(
+                usuario=_gmail_user,
+                senha_app=_gmail_pass,
+                smtp_host=_smtp_host,
+                smtp_port=_smtp_port,
+            )
+            logger.info("Email sender SMTP inicializado (%s)", _gmail_user)
+        except Exception as e:
+            logger.warning("Email sender não inicializado: %s", e)
+    else:
+        logger.info("Email sender: credenciais não configuradas")
+
+    # Outlook Graph API — opcional, sobrepõe SMTP se configurado
+    if settings.outlook_client_id and settings.outlook_client_secret and settings.outlook_tenant_id:
+        try:
+            outlook_client = OutlookClient(
+                client_id=settings.outlook_client_id,
+                client_secret=settings.outlook_client_secret,
+                tenant_id=settings.outlook_tenant_id,
+                user_email=settings.outlook_user_email or _gmail_user,
+            )
+            ok = await outlook_client.health_check()
+            if ok:
+                logger.info("Outlook (Graph API) inicializado — %s", settings.outlook_user_email)
+            else:
+                logger.warning("Outlook Graph API: health_check falhou")
+                outlook_client = None
+        except Exception as e:
+            logger.warning("Outlook client não inicializado: %s", e)
+            outlook_client = None
 
     if settings.openai_api_key:
         try:
@@ -73,26 +146,36 @@ async def lifespan(app: FastAPI):
 
     is_serverless = bool(os.getenv("VERCEL"))
 
-    if settings.briefing_numero_destino and not is_serverless:
+    # Briefing — número e hora podem vir do banco
+    _briefing_numero = _cfg("briefing_numero_destino", settings.briefing_numero_destino)
+    _briefing_hora   = _cfg("briefing_hora", settings.briefing_hora)
+    _briefing_ativo  = _cfg("briefing_ativo", "true").lower() == "true"
+
+    if _briefing_numero and _briefing_ativo and not is_serverless:
         email_reader = None
-        if settings.gmail_user and settings.gmail_app_password:
+        if outlook_client is not None:
+            from src.email_reader import OutlookGraphReader
+            email_reader = OutlookGraphReader(outlook_client)
+            logger.info("Briefing: leitura de e-mail via Outlook Graph API")
+        elif _gmail_user and _gmail_pass:
             email_reader = EmailReader(
                 imap_host=settings.gmail_imap_host,
-                usuario=settings.gmail_user,
-                senha=settings.gmail_app_password,
+                usuario=_gmail_user,
+                senha=_gmail_pass,
             )
+            logger.info("Briefing: leitura de e-mail via IMAP Gmail")
 
         import anthropic as _anthropic
         briefing_scheduler = BriefingScheduler(
             obsidian=obsidian,
             whatsapp_send_fn=whatsapp.enviar_mensagem,
-            numero_destino=settings.briefing_numero_destino,
-            hora=settings.briefing_hora,
+            numero_destino=_briefing_numero,
+            hora=_briefing_hora,
             email_reader=email_reader,
             anthropic_client=_anthropic.Anthropic(api_key=settings.anthropic_api_key),
         )
         briefing_scheduler.iniciar()
-        logger.info("Briefing agendado para %s → %s", settings.briefing_hora, settings.briefing_numero_destino)
+        logger.info("Briefing agendado para %s → %s", _briefing_hora, _briefing_numero)
     elif is_serverless:
         logger.info("Ambiente serverless (Vercel): briefing desativado — use Vercel Cron")
 
@@ -104,13 +187,60 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Dead letter indisponível ao iniciar: %s", e)
 
-    logger.info("Integrador EG iniciado ✅")
+    logger.info("Integrador EG iniciado")
     yield
 
     if briefing_scheduler:
         briefing_scheduler.parar()
     await close_pool()
     logger.info("Integrador EG encerrado")
+
+
+# ── Funções de reinicialização (chamadas pelo portal de configurações) ────────
+
+async def reinicializar_email(
+    usuario: str,
+    senha: str,
+    host: str = "smtp.gmail.com",
+    porta: int = 587,
+) -> tuple[bool, str]:
+    """Reinicializa o EmailSender com novas credenciais. Chamado pelo portal admin."""
+    global email_sender
+    try:
+        novo = EmailSender(usuario=usuario, senha_app=senha, smtp_host=host, smtp_port=porta)
+        # Testa antes de substituir
+        ok = await novo.health_check()
+        if not ok:
+            return False, "Credenciais inválidas ou servidor SMTP recusou a conexão"
+        email_sender = novo
+        logger.info("EmailSender reinicializado via portal: %s", usuario)
+        return True, "ok"
+    except Exception as e:
+        logger.error("Falha ao reinicializar EmailSender: %s", e)
+        return False, str(e)
+
+
+def resetar_cache_webhook_secret() -> None:
+    """Limpa o cache do webhook secret — forçar releitura do banco na próxima requisição."""
+    global _webhook_secret_cache
+    _webhook_secret_cache = ""
+
+
+async def reinicializar_whatsapp(instance: str) -> tuple[bool, str]:
+    """Reinicializa o WhatsAppClient com nova instância. Chamado pelo portal admin."""
+    global whatsapp
+    try:
+        novo = WhatsAppClient(
+            base_url=settings.evolution_api_url,
+            instance=instance,
+            api_key=settings.evolution_api_key,
+        )
+        whatsapp = novo
+        logger.info("WhatsAppClient reinicializado via portal: instância=%s", instance)
+        return True, "ok"
+    except Exception as e:
+        logger.error("Falha ao reinicializar WhatsAppClient: %s", e)
+        return False, str(e)
 
 
 app = FastAPI(title="Integrador EG", lifespan=lifespan)
@@ -144,11 +274,23 @@ async def health():
         pendentes = await dead_letter.total_pendentes() if settings.database_url else 0
     except Exception:
         pendentes = -1
+    # Outlook health
+    outlook_status = "inativo"
+    if outlook_client is not None:
+        try:
+            ol_ok = await outlook_client.health_check()
+            outlook_status = "ok" if ol_ok else "erro"
+        except Exception:
+            outlook_status = "erro"
+    elif email_sender is not None:
+        outlook_status = "smtp_fallback"
+
     return {
         "status": "ok",
         "obsidian": "ok" if obsidian_ok else "offline",
         "whisper": "ativo" if transcriber else "inativo",
         "briefing": f"agendado {settings.briefing_hora}" if briefing_scheduler else "inativo",
+        "email": outlook_status,
         "dead_letter_pendentes": pendentes,
         "environment": settings.environment,
     }
@@ -156,12 +298,34 @@ async def health():
 
 _api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
+# Cache em memória do webhook_secret — atualizado quando carregado do banco
+_webhook_secret_cache: str = ""
+
+
+async def _get_webhook_secret() -> str:
+    """Retorna o webhook secret: banco > .env > vazio (dev mode)."""
+    global _webhook_secret_cache
+    if _webhook_secret_cache:
+        return _webhook_secret_cache
+    # Tenta banco primeiro
+    try:
+        from src.configuracoes import get_config
+        db_secret = await get_config("webhook_secret")
+        if db_secret:
+            _webhook_secret_cache = db_secret
+            return db_secret
+    except Exception:
+        pass
+    # Fallback .env
+    return settings.webhook_secret
+
 
 async def _verificar_api_key(api_key: str | None = Security(_api_key_header)) -> None:
     """Rejeita requisições sem x-api-key válida quando WEBHOOK_SECRET está configurado."""
-    if not settings.webhook_secret:
+    secret = await _get_webhook_secret()
+    if not secret:
         return  # dev mode: sem secret configurado aceita tudo
-    if api_key != settings.webhook_secret:
+    if api_key != secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
 
 
@@ -256,6 +420,176 @@ async def webhook_whatsapp(request: Request):
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
         return JSONResponse({"status": "ok", "acao": resultado.acao, "projeto": resultado.projeto})
 
+    # ─────────────────────────────────────────────────────────────
+    # Bloco de ações de e-mail: enviar, responder, encaminhar, rascunho
+    # Usa OutlookClient (Graph API) quando configurado; cai para SMTP Gmail.
+    # ─────────────────────────────────────────────────────────────
+    _ACOES_EMAIL = {
+        AcaoTipo.ENVIAR_EMAIL,
+        AcaoTipo.RESPONDER_EMAIL,
+        AcaoTipo.ENCAMINHAR_EMAIL,
+        AcaoTipo.CRIAR_RASCUNHO,
+    }
+
+    if resultado.acao in _ACOES_EMAIL:
+        # Decide qual cliente de e-mail usar
+        usar_outlook = outlook_client is not None
+        usar_smtp    = email_sender is not None
+
+        if not usar_outlook and not usar_smtp:
+            await _responder(
+                mensagem.grupo_id,
+                "⚠️ Serviço de e-mail não configurado.\n"
+                "Para Outlook: adicione OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET, OUTLOOK_TENANT_ID no .env\n"
+                "Para Gmail: adicione GMAIL_USER e GMAIL_APP_PASSWORD no .env.",
+            )
+            return JSONResponse({"status": "email_nao_configurado"})
+
+        para    = resultado.email_para or ""
+        assunto = resultado.email_assunto or f"Mensagem de {resultado.projeto}"
+        corpo   = resultado.email_corpo or resultado.conteudo_formatado
+        tipo    = resultado.email_tipo or "personalizado"
+        msg_id  = resultado.email_message_id or ""
+        cc      = resultado.email_cc
+        bcc     = resultado.email_bcc
+
+        # Para enviar/responder/encaminhar precisamos de destinatário
+        if resultado.acao != AcaoTipo.CRIAR_RASCUNHO and not para:
+            await _responder(
+                mensagem.grupo_id,
+                "⚠️ Destinatário do e-mail não identificado. Por favor, informe o endereço de e-mail.",
+            )
+            return JSONResponse({"status": "email_sem_destinatario"})
+
+        sucesso_email = False
+        erro_email: str | None = None
+        resumo_wa = ""
+
+        try:
+            if usar_outlook:
+                # ── Microsoft Graph API ──────────────────────────────
+                if resultado.acao == AcaoTipo.ENVIAR_EMAIL:
+                    sucesso_email = await outlook_client.enviar_com_template(
+                        para=para,
+                        assunto=assunto,
+                        tipo=tipo,
+                        dados={
+                            "corpo": corpo,
+                            "pergunta": corpo,
+                            "cliente": para,
+                            "remetente": settings.email_remetente_nome,
+                            "descricao": corpo,
+                        },
+                        cc=cc,
+                        bcc=bcc,
+                    )
+                    resumo_wa = f"📧 E-mail enviado para {para}\n📌 Assunto: {assunto}"
+
+                elif resultado.acao == AcaoTipo.RESPONDER_EMAIL:
+                    if not msg_id:
+                        await _responder(
+                            mensagem.grupo_id,
+                            "⚠️ ID da mensagem original não encontrado. Não consigo identificar qual e-mail responder.",
+                        )
+                        return JSONResponse({"status": "email_sem_message_id"})
+                    sucesso_email = await outlook_client.responder(
+                        message_id=msg_id,
+                        corpo=corpo,
+                    )
+                    resumo_wa = f"↩️ Resposta enviada\n📌 Assunto: {assunto}"
+
+                elif resultado.acao == AcaoTipo.ENCAMINHAR_EMAIL:
+                    if not msg_id:
+                        await _responder(
+                            mensagem.grupo_id,
+                            "⚠️ ID da mensagem original não encontrado. Não consigo identificar qual e-mail encaminhar.",
+                        )
+                        return JSONResponse({"status": "email_sem_message_id"})
+                    destinatarios = [e.strip() for e in para.split(",") if e.strip()]
+                    sucesso_email = await outlook_client.encaminhar(
+                        message_id=msg_id,
+                        para=destinatarios,
+                        comentario=corpo,
+                    )
+                    resumo_wa = f"↪️ E-mail encaminhado para {para}"
+
+                elif resultado.acao == AcaoTipo.CRIAR_RASCUNHO:
+                    # Corpo simples → HTML básico para o rascunho
+                    corpo_html = f"<p>{corpo.replace(chr(10), '<br/>')}</p>"
+                    draft_id = await outlook_client.criar_rascunho(
+                        para=para or "",
+                        assunto=assunto,
+                        corpo_html=corpo_html,
+                        corpo_texto=corpo,
+                        cc=cc,
+                    )
+                    sucesso_email = bool(draft_id)
+                    resumo_wa = f"📝✉️ Rascunho criado: {assunto}"
+
+            else:
+                # ── SMTP Gmail fallback ─────────────────────────────
+                if resultado.acao in (AcaoTipo.ENVIAR_EMAIL, AcaoTipo.CRIAR_RASCUNHO):
+                    sucesso_email = await email_sender.enviar_com_template(
+                        para=para,
+                        assunto=assunto,
+                        tipo=tipo,
+                        dados={
+                            "corpo": corpo,
+                            "pergunta": corpo,
+                            "cliente": para,
+                            "remetente": settings.email_remetente_nome,
+                            "descricao": corpo,
+                        },
+                    )
+                    resumo_wa = f"📧 E-mail enviado para {para}\n📌 Assunto: {assunto}"
+                else:
+                    await _responder(
+                        mensagem.grupo_id,
+                        f"⚠️ Ação '{resultado.acao}' requer Outlook (Graph API). "
+                        "Configure OUTLOOK_CLIENT_ID no .env.",
+                    )
+                    return JSONResponse({"status": "outlook_nao_configurado"})
+
+        except Exception as exc:
+            logger.error("Erro ao executar ação de e-mail (%s): %s", resultado.acao, exc)
+            sucesso_email = False
+            erro_email = str(exc)
+
+        emoji = ACAO_EMOJI.get(resultado.acao, "📧")
+        if sucesso_email:
+            await _responder(mensagem.grupo_id, f"{emoji} {resumo_wa}")
+        else:
+            fonte = "Outlook" if usar_outlook else "SMTP"
+            await _responder(
+                mensagem.grupo_id,
+                f"⚠️ Falha ao executar ação de e-mail via {fonte}. "
+                + (f"Detalhe: {erro_email}" if erro_email else "Verifique as credenciais."),
+            )
+
+        await _registrar_diario(
+            mensagem, resultado.acao, resultado.projeto,
+            "sucesso" if sucesso_email else "erro",
+            None if sucesso_email else (erro_email or "Falha e-mail"),
+        )
+        from src.portal import registrar_execucao_db
+        await registrar_execucao_db(
+            grupo_id=mensagem.grupo_id,
+            grupo_nome=mensagem.grupo_nome,
+            remetente=mensagem.remetente,
+            acao=resultado.acao,
+            projeto=resultado.projeto,
+            conteudo_resumo=f"Para: {para} | Assunto: {assunto}",
+            resultado="sucesso" if sucesso_email else "erro",
+            erro_detalhe=None if sucesso_email else (erro_email or "Falha e-mail"),
+        )
+        return JSONResponse({
+            "status": "ok" if sucesso_email else "email_falhou",
+            "acao": resultado.acao,
+            "para": para,
+            "assunto": assunto,
+            "backend": "outlook" if usar_outlook else "smtp",
+        })
+
     # --- registra no Obsidian ---
     try:
         caminho = await obsidian.registrar_acao(
@@ -279,14 +613,39 @@ async def webhook_whatsapp(request: Request):
             "⚠️ Obsidian temporariamente indisponível. Sua mensagem foi salva e será registrada assim que voltar.",
         )
         await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "erro", str(e))
+        from src.portal import registrar_execucao_db
+        await registrar_execucao_db(
+            grupo_id=mensagem.grupo_id,
+            grupo_nome=mensagem.grupo_nome,
+            remetente=mensagem.remetente,
+            acao=resultado.acao,
+            projeto=resultado.projeto,
+            conteudo_resumo=mensagem.conteudo[:300],
+            resultado="erro",
+            erro_detalhe=str(e),
+        )
         raise HTTPException(status_code=503, detail=str(e))
 
     # --- confirma no grupo ---
     emoji = ACAO_EMOJI.get(resultado.acao, "✅")
     await _responder(mensagem.grupo_id, f"{emoji} {resultado.resumo_confirmacao}")
 
-    # --- registra no diário e no dashboard ---
+    # --- registra no diário, no portal e no dashboard externo ---
     await _registrar_diario(mensagem, resultado.acao, resultado.projeto, "sucesso")
+
+    # portal: grava no Postgres local (feed do portal do cliente)
+    from src.portal import registrar_execucao_db
+    await registrar_execucao_db(
+        grupo_id=mensagem.grupo_id,
+        grupo_nome=mensagem.grupo_nome,
+        remetente=mensagem.remetente,
+        acao=resultado.acao,
+        projeto=resultado.projeto,
+        conteudo_resumo=mensagem.conteudo[:300],
+        resultado="sucesso",
+    )
+
+    # dashboard Next.js externo (opcional — não crítico)
     await app_client.registrar_execucao(
         grupo_id=mensagem.grupo_id, grupo_nome=mensagem.grupo_nome,
         acao=resultado.acao, projeto=resultado.projeto, resultado="sucesso",

@@ -13,6 +13,10 @@ class AcaoTipo(str, Enum):
     CRIAR_DAILY = "criar_daily"
     ATUALIZAR_STATUS = "atualizar_status"
     CONSULTAR_TASKS = "consultar_tasks"
+    ENVIAR_EMAIL = "enviar_email"
+    RESPONDER_EMAIL = "responder_email"
+    ENCAMINHAR_EMAIL = "encaminhar_email"
+    CRIAR_RASCUNHO = "criar_rascunho"
     AMBIGUA = "ambigua"  # mensagem não tem intenção clara
 
 
@@ -53,6 +57,10 @@ ACAO_EMOJI: dict[AcaoTipo, str] = {
     AcaoTipo.CRIAR_DAILY:          "📆",
     AcaoTipo.ATUALIZAR_STATUS:     "🔄",
     AcaoTipo.CONSULTAR_TASKS:      "📋",
+    AcaoTipo.ENVIAR_EMAIL:         "📧",
+    AcaoTipo.RESPONDER_EMAIL:      "↩️",
+    AcaoTipo.ENCAMINHAR_EMAIL:     "↪️",
+    AcaoTipo.CRIAR_RASCUNHO:       "📝✉️",
 }
 
 
@@ -75,6 +83,15 @@ class ClassificacaoResult(BaseModel):
     pergunta_esclarecimento: Optional[str] = Field(None, description="Pergunta a fazer se ambígua")
     resumo_confirmacao: str = Field(..., description="Mensagem de confirmação para enviar ao cliente")
     idioma_detectado: str = Field(default="pt", description="pt | es | en")
+
+    # Campos específicos para ações de e-mail (enviar_email, responder_email, encaminhar_email, criar_rascunho)
+    email_para: Optional[str] = Field(None, description="Destinatário(s) — ex: cliente@empresa.com")
+    email_assunto: Optional[str] = Field(None, description="Assunto do e-mail")
+    email_corpo: Optional[str] = Field(None, description="Corpo completo do e-mail, pronto para envio")
+    email_tipo: Optional[str] = Field(None, description="invoice | pergunta | proposta | follow_up | personalizado")
+    email_message_id: Optional[str] = Field(None, description="ID da mensagem original (para responder/encaminhar)")
+    email_cc: Optional[str] = Field(None, description="CC do e-mail, separado por vírgulas")
+    email_bcc: Optional[str] = Field(None, description="BCC do e-mail, separado por vírgulas")
 
 
 class ObsidianEscrita(BaseModel):
