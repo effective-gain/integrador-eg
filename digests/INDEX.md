@@ -1,0 +1,7 @@
+# EG OS — Índice de Digests Diários
+
+Histórico consolidado de atividade nos repositórios do EG OS.
+
+| Data | Projetos ativos | Commits totais | Link |
+|------|----------------|----------------|------|
+| 2026-04-23 | 4 (integrador-eg, K2CON, egfood, Quickbooks_Automacao) | 18 | [ver](2026-04-23.md) |
