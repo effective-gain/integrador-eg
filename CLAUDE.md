@@ -100,3 +100,52 @@ WhatsApp grupo (áudio/texto)
 - Obsidian vault: `C:\Users\user\Documents\Effective Gain`
 - n8n: Easypanel (Hostinger)
 - Notion: fonte de verdade — documentar workflows antes de subir
+
+---
+
+## Status de Testes Locais (23/04/2026)
+
+| Componente | Resultado |
+|-----------|-----------|
+| Obsidian REST API | ✅ 4/4 testes passando |
+| Claude API (classificador) | ✅ Pronto (só precisa ANTHROPIC_API_KEY) |
+| Workflows n8n | ✅ JSON prontos em `workflows/` + `workflows/_fixed/` |
+| Evolution API | ❌ A configurar — precisa de +55 31 97224-4045 |
+| n8n imports | ❌ Pendente — importar os 6 workflows |
+
+## Guia de Ativação (LUIZ — executar nesta ordem)
+
+### Passo 1 — Testar locais (já funcionam)
+```bash
+cd /c/Users/user/Desktop/GitHub\ -\ Effective\ Gain/Projetos\ no\ Claude/whatsapp_os
+python scripts/test_obsidian.py    # valida conexão com Obsidian
+python scripts/test_classifier.py  # valida prompt Claude
+python scripts/test_flow.py        # simula fluxo completo sem WhatsApp
+```
+
+### Passo 2 — Configurar n8n (requer acesso ao Easypanel)
+1. Abrir n8n no Easypanel
+2. Importar na ordem:
+   - `workflows/_fixed/WA_RECEPTOR.json` (ou `workflows/WA_RECEPTOR.json`)
+   - `workflows/_fixed/WA_WHISPER.json`
+   - `workflows/_fixed/WA_CLASSIFIER.json`
+   - `workflows/_fixed/WA_EXECUTOR.json`
+   - `workflows/_fixed/WA_RESPONDER.json`
+   - `workflows/INSTA_KEEPER.json`
+3. Em cada workflow, configurar as variáveis:
+   ```
+   OBSIDIAN_API_KEY=de3cef3d55131b7d2eb38033ee9878fdedd84e320d803b99517b600079bc5edd
+   ANTHROPIC_API_KEY=(da conta EG)
+   EVOLUTION_WEBHOOK_URL=(URL do n8n)
+   ```
+
+### Passo 3 — Conectar Evolution API
+1. Acessar Evolution API no Easypanel
+2. Criar instância com nome `k2con-producao`
+3. Scanear QR com +55 31 97224-4045
+4. Apontar webhook para `https://[n8n-url]/webhook/[WA_RECEPTOR_id]`
+
+### Passo 4 — Testar em grupo real
+1. Usar grupo "EG Geral" para teste
+2. Enviar mensagem de teste: "criar task reunião amanhã"
+3. Verificar se nota foi criada em `04 - Inbox/` no Obsidian
