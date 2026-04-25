@@ -1,6 +1,6 @@
 # Estado Atual e Próximos Passos — Integrador EG
 
-**Última atualização:** 22 de Abril de 2026 | **Commit:** 06ead0b
+**Última atualização:** 23 de Abril de 2026 | **Commit:** f488297
 
 ---
 
@@ -65,28 +65,29 @@
 
 ## O que está pendente (próximos passos)
 
-### Deploy e infraestrutura
-- [ ] Configurar Evolution API + conectar +55 31 97224-4045
-- [ ] Deploy no Easypanel (Hostinger) via Docker
-- [ ] Configurar Postgres em produção (DATABASE_URL)
+### Deploy e infraestrutura (bloqueadores críticos)
+- [ ] Configurar instância Evolution API no Easypanel
+- [ ] Conectar +55 31 97224-4045 via QR Code
+- [ ] Configurar DATABASE_URL em produção (Postgres)
+- [ ] Deploy container no Easypanel (Hostinger)
 - [ ] Testar webhook de ponta a ponta com mensagem real
+
+### Criação dos grupos WhatsApp (em ordem de prioridade)
+- [ ] `gestao-eg` — primeiro grupo de teste (operação interna EG)
+- [ ] `mkt-eg` — marketing interno
+- [ ] `k2con` — cliente com maior volume
+- [ ] `eg-build` — cliente EUA (QuickBooks integrado)
+- [ ] `beef-smash` — cliente EG Food
+- [ ] `rodag` — cliente em onboarding
 
 ### Funcionalidades
 - [ ] Suporte a imagens no webhook (imageMessage)
 - [ ] Suporte a documentos/PDFs no webhook (documentMessage)
 - [ ] Dashboard web (portal admin) — visualizar diário, DLQ, status
-- [ ] Multi-tenant: múltiplos clientes com cofres separados
-
-### Evolution API — configuração pendente
-- [ ] Criar instância na Evolution API
-- [ ] Configurar webhook URL + header de autenticação
-- [ ] Conectar número +55 31 97224-4045 via QR Code
-- [ ] Testar com grupo de teste (gestao-eg)
-- [ ] Expandir para grupos dos projetos reais
 
 ### Integração com plataformas externas
-- [ ] QuickBooks — lançamento financeiro via receita Playwright
-- [ ] Portal de fornecedores — a definir por projeto
+- [ ] QuickBooks — lançamento financeiro via receita Playwright (receita já existe)
+- [ ] Buildertrend — lançamentos EG Build (planejado)
 - [ ] Social Responder — resposta em redes sociais (em design)
 
 ---
