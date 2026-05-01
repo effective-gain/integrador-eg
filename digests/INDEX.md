@@ -4,6 +4,7 @@ Histórico consolidado de atividade nos repositórios do EG OS.
 
 | Data | Projetos ativos | Commits totais | Link |
 |------|----------------|----------------|------|
+| 2026-05-01 | 1 (integrador-eg digest) | 1 | [ver](2026-05-01.md) |
 | 2026-04-30 | 1 (K2CON) | 9 | [ver](2026-04-30.md) |
 | 2026-04-29 | 2 (K2CON, ancora_lances) | 12 | [ver](2026-04-29.md) |
 | 2026-04-28 | 2 (K2CON, ancora_lances) | 12 | [ver](2026-04-28.md) |
